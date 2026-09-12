@@ -95,9 +95,11 @@ int App::run() const {
         return 1;
     }
 
-    brls::Application::getPlatform()->setThemeVariant(brls::ThemeVariant::DARK);
     ui::applyFixedTheme();
     brls::Application::createWindow("TexNX");
+
+    // deko3d の video context は createWindow() で生成されるため、その後に切り替える。
+    brls::Application::getPlatform()->setThemeVariant(brls::ThemeVariant::DARK);
     brls::Application::setGlobalQuit(true);
 
     logConfigState(configResult);

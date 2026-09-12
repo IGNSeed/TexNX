@@ -27,7 +27,7 @@ TexNX は、Atmosphere CFW を導入した Nintendo Switch 上で動作する、
 
 - devkitPro
 - devkitA64
-- libnx
+- libnx 4.10.0 以上
 - deko3d と uam
 - switch-glm
 - switch-cmake
@@ -54,11 +54,11 @@ cmake -S . -B build -G Ninja \
 cmake --build build --parallel
 ```
 
-生成物は `build/TexNX.nro` です。NACP の app name は `TexNX`、version は CMake project version と同じ `0.2.0`、author は `IGNSeed` です。専用の権利クリアな artwork がないため custom icon は同梱していません。
+生成物は `build/TexNX.nro` です。必要な shader、font、i18n resource は NRO 内の RomFS に収録されるため、実機への配布物はこの NRO 1 ファイルだけです。NACP の app name は `TexNX`、version は CMake project version と同じ `0.2.0`、author は `IGNSeed` です。専用の権利クリアな artwork がないため custom icon は同梱していません。
 
 ## 配置と操作
 
-生成した `TexNX.nro` は、将来的に次の場所へ配置する想定です。
+生成した `TexNX.nro` は次の推奨場所へ配置します。Homebrew Menu が走査する `sdmc:/switch/` 直下へ配置しても起動できます。
 
 ```text
 sdmc:/switch/TexNX/TexNX.nro

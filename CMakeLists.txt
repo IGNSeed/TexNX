@@ -71,6 +71,11 @@ target_compile_options(TexNX PRIVATE
 
 target_link_libraries(TexNX PRIVATE borealis)
 
+# 実機 crash の module-relative offset を同一 build の symbol へ対応付ける。
+target_link_options(TexNX PRIVATE
+    "-Wl,-Map,${CMAKE_CURRENT_BINARY_DIR}/TexNX.map"
+)
+
 set(TEXNX_ROMFS_DIR "${CMAKE_CURRENT_BINARY_DIR}/romfs")
 file(MAKE_DIRECTORY
     "${TEXNX_ROMFS_DIR}/i18n/en-US"
