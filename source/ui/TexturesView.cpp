@@ -9,24 +9,24 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
-#include <limits>
 #include <memory>
 #include <string>
 #include <sys/stat.h>
-#include <utility>
 #include <vector>
 
+#include <borealis/core/touch/tap_gesture.hpp>
 #include <borealis/extern/nanovg/stb_image.h>
 
 namespace texnx::ui {
 namespace {
 
-constexpr char TextureCellIdentifier[] = "TexNXTextureCell";
 constexpr std::size_t MaximumIconFileBytes = 2 * 1024 * 1024;
 constexpr int MaximumIconDimension = 512;
+constexpr int TextureIconUploadDimension = 80;
 constexpr float TextureRowHeight = 112.0F;
 constexpr float TextureIconFrameSize = 84.0F;
 constexpr float TextureIconSize = 80.0F;
+constexpr float TextureListInset = 8.0F;
 
 struct TextureListEntry {
     std::string name;
@@ -93,9 +93,48 @@ bool loadPng(brls::Image& image, const std::string& path) noexcept {
             return false;
         }
 
+        int uploadWidth = width;
+        int uploadHeight = height;
+        const unsigned char* uploadPixels = pixels.get();
+        std::vector<unsigned char> resizedPixels;
+
+        const int largestDimension = std::max(width, height);
+        if (largestDimension > TextureIconUploadDimension) {
+            uploadWidth = std::max(
+                1, width * TextureIconUploadDimension / largestDimension);
+            uploadHeight = std::max(
+                1, height * TextureIconUploadDimension / largestDimension);
+            resizedPixels.resize(static_cast<std::size_t>(uploadWidth) *
+                                 static_cast<std::size_t>(uploadHeight) * 4U);
+
+            for (int destinationY = 0; destinationY < uploadHeight;
+                 ++destinationY) {
+                const int sourceY =
+                    destinationY * height / uploadHeight;
+                for (int destinationX = 0; destinationX < uploadWidth;
+                     ++destinationX) {
+                    const int sourceX =
+                        destinationX * width / uploadWidth;
+                    const std::size_t sourceOffset =
+                        (static_cast<std::size_t>(sourceY) *
+                             static_cast<std::size_t>(width) +
+                         static_cast<std::size_t>(sourceX)) *
+                        4U;
+                    const std::size_t destinationOffset =
+                        (static_cast<std::size_t>(destinationY) *
+                             static_cast<std::size_t>(uploadWidth) +
+                         static_cast<std::size_t>(destinationX)) *
+                        4U;
+                    std::copy_n(pixels.get() + sourceOffset, 4,
+                                resizedPixels.data() + destinationOffset);
+                }
+            }
+            uploadPixels = resizedPixels.data();
+        }
+
         const int texture = nvgCreateImageRGBA(
-            brls::Application::getNVGContext(), width, height,
-            NVG_IMAGE_NEAREST, pixels.get());
+            brls::Application::getNVGContext(), uploadWidth, uploadHeight,
+            NVG_IMAGE_NEAREST, uploadPixels);
         if (texture <= 0) {
             return false;
         }
@@ -107,16 +146,18 @@ bool loadPng(brls::Image& image, const std::string& path) noexcept {
     }
 }
 
-class TextureCell final : public brls::RecyclerCell {
+class TextureCell final : public brls::Box {
 public:
-    TextureCell() {
-        setAxis(brls::Axis::ROW);
+    TextureCell() : brls::Box(brls::Axis::ROW) {
         setAlignItems(brls::AlignItems::CENTER);
         setFocusable(true);
         setHeight(TextureRowHeight);
         setPadding(10, 16, 10, 16);
         setClipsToBounds(true);
         setHighlightCornerRadius(8);
+        setLineBottom(1);
+        setLineColor(
+            brls::Application::getTheme()["brls/sidebar/separator"]);
 
         auto* iconFrame = new brls::Box(brls::Axis::ROW);
         iconFrame->setWidth(TextureIconFrameSize);
@@ -166,16 +207,35 @@ public:
         textColumn->addView(description_);
 
         addView(textColumn);
+
+        // Recycler外でもcontrollerとtouchで同じ暫定通知を実行する。
+        registerClickAction([this](brls::View*) {
+            brls::Application::notify(unavailableMessage_);
+            return true;
+        });
+        addGestureRecognizer(new brls::TapGestureRecognizer(this));
+
+        inputTypeSubscription_ =
+            brls::Application::getGlobalInputTypeChangeEvent()->subscribe(
+                [this](const brls::InputType type) {
+                    const bool focusedByController =
+                        type == brls::InputType::GAMEPAD && focused;
+                    setLineColor(
+                        focusedByController
+                            ? brls::TRANSPARENT
+                            : brls::Application::getTheme()[
+                                  "brls/sidebar/separator"]);
+                });
     }
 
-    void prepareForReuse() override {
-        icon_->clear();
-        name_->setText("");
-        description_->setText("");
-        description_->setVisibility(brls::Visibility::GONE);
+    ~TextureCell() override {
+        brls::Application::getGlobalInputTypeChangeEvent()->unsubscribe(
+            inputTypeSubscription_);
     }
 
-    void configure(const TextureListEntry& entry) {
+    void configure(const TextureListEntry& entry,
+                   const std::string& unavailableMessage) {
+        unavailableMessage_ = unavailableMessage;
         name_->setText(entry.name);
         description_->setText(entry.description);
         description_->setVisibility(entry.description.empty()
@@ -188,48 +248,43 @@ public:
         }
     }
 
+    void onFocusGained() override {
+        brls::Box::onFocusGained();
+        if (brls::Application::getInputType() == brls::InputType::GAMEPAD) {
+            setLineColor(brls::TRANSPARENT);
+        }
+    }
+
+    void onFocusLost() override {
+        brls::Box::onFocusLost();
+        setLineColor(
+            brls::Application::getTheme()["brls/sidebar/separator"]);
+    }
+
 private:
     brls::Image* icon_{nullptr};
     brls::Label* name_{nullptr};
     brls::Label* description_{nullptr};
+    std::string unavailableMessage_;
+    brls::Event<brls::InputType>::Subscription inputTypeSubscription_;
 };
 
-class TextureDataSource final : public brls::RecyclerDataSource {
+class TextureScrollingFrame final : public brls::ScrollingFrame {
 public:
-    TextureDataSource(std::vector<TextureListEntry> entries,
-                      std::string unavailableMessage)
-        : entries_(std::move(entries)),
-          unavailableMessage_(std::move(unavailableMessage)) {}
-
-    int numberOfRows(brls::RecyclerFrame*, int) override {
-        const auto maximum =
-            static_cast<std::size_t>(std::numeric_limits<int>::max());
-        return static_cast<int>(std::min(entries_.size(), maximum));
+    TextureScrollingFrame() {
+        setScrollingBehavior(brls::ScrollingBehavior::CENTERED);
     }
 
-    brls::RecyclerCell* cellForRow(brls::RecyclerFrame* recycler,
-                                   const brls::IndexPath index) override {
-        auto* cell = static_cast<TextureCell*>(
-            recycler->dequeueReusableCell(TextureCellIdentifier));
-        cell->configure(entries_[static_cast<std::size_t>(index.row)]);
-        return cell;
-    }
-
-    float heightForRow(brls::RecyclerFrame*, brls::IndexPath) override {
-        return TextureRowHeight;
-    }
-
-    void didSelectRowAt(brls::RecyclerFrame*,
-                        const brls::IndexPath index) override {
-        if (index.row >= 0 &&
-            static_cast<std::size_t>(index.row) < entries_.size()) {
-            brls::Application::notify(unavailableMessage_);
+    void onChildFocusGained(brls::View* directChild,
+                            brls::View* focusedView) override {
+        // focus borderがscroll animationより先にviewport外へ出ないよう、
+        // focus確定と同じ入力処理内で選択rowを完全表示位置へ移動する。
+        brls::Box::onChildFocusGained(directChild, focusedView);
+        childFocused = true;
+        if (brls::Application::getInputType() == brls::InputType::GAMEPAD) {
+            updateScrolling(false);
         }
     }
-
-private:
-    std::vector<TextureListEntry> entries_;
-    std::string unavailableMessage_;
 };
 
 std::vector<TextureListEntry> makeEntries(
@@ -301,18 +356,29 @@ TexturesView::TexturesView(localization::Localization& localization)
     }
 
     if (hasEntries) {
-        auto* recycler = new brls::RecyclerFrame();
-        recycler->setGrow(1);
-        recycler->setWidthPercentage(100);
-        recycler->setClipsToBounds(true);
-        recycler->estimatedRowHeight = TextureRowHeight;
-        recycler->registerCell(TextureCellIdentifier,
-                               [] { return new TextureCell(); });
-        recycler->setDefaultCellFocus(brls::IndexPath(0, 0));
-        recycler->setDataSource(new TextureDataSource(
-            std::move(entries),
-            localization_.text("textures.apply_unavailable")));
-        panel->addView(recycler);
+        auto* list = new TextureScrollingFrame();
+        list->setGrow(1);
+        list->setShrink(1);
+        list->setMinHeight(0);
+        list->setWidthPercentage(100);
+        list->setClipsToBounds(true);
+
+        auto* content = new brls::Box(brls::Axis::COLUMN);
+        content->setPadding(TextureListInset);
+        content->setDefaultFocusedIndex(0);
+
+        const auto unavailableMessage =
+            localization_.text("textures.apply_unavailable");
+        for (std::size_t index = 0; index < entries.size(); ++index) {
+            auto* cell = new TextureCell();
+            cell->setWidthPercentage(100);
+            cell->setLineTop(index == 0 ? 1 : 0);
+            cell->configure(entries[index], unavailableMessage);
+            content->addView(cell);
+        }
+
+        list->setContentView(content);
+        panel->addView(list);
         panel->setDefaultFocusedIndex(
             static_cast<int>(panel->getChildren().size() - 1));
     }
