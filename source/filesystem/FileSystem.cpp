@@ -28,4 +28,23 @@ DirectoryCheckResult FileSystem::directoryExists(const char* path) noexcept {
     return {DirectoryState::Error, posixError, nativeResult};
 }
 
+OperationResult FileSystem::createDirectory(const char* path) noexcept {
+    const auto existing = directoryExists(path);
+    if (existing.state == DirectoryState::Found) {
+        return {true, 0, 0};
+    }
+    if (path == nullptr || path[0] == '\0') {
+        return {false, EINVAL, 0};
+    }
+
+    errno = 0;
+    if (::mkdir(path, 0777) == 0) {
+        return {true, 0, 0};
+    }
+
+    const int posixError = errno;
+    return {false, posixError,
+            static_cast<std::uint32_t>(fsdevGetLastResult())};
+}
+
 } // namespace texnx::filesystem

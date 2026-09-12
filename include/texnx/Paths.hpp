@@ -10,5 +10,10 @@ inline constexpr char MinecraftCommon[] =
     "sdmc:/atmosphere/contents/01006BD001E06000/romfs/Common";
 inline constexpr char TexNxDirectory[] = "sdmc:/switch/TexNX";
 inline constexpr char FutureTextureDirectory[] = "sdmc:/switch/TexNX/Textures";
+inline constexpr char ConfigFile[] = "sdmc:/switch/TexNX/config.json";
+inline constexpr char ConfigTemporaryFile[] = "sdmc:/switch/TexNX/config.json.tmp";
+
+inline constexpr char EnglishTranslations[] = "romfs:/i18n/en-US/texnx.json";
+inline constexpr char JapaneseTranslations[] = "romfs:/i18n/ja-JP/texnx.json";
 
 } // namespace texnx::paths

@@ -1,13 +1,21 @@
 #include "texnx/App.hpp"
 
 #include "texnx/Paths.hpp"
+#include "texnx/config/Config.hpp"
 #include "texnx/filesystem/FileSystem.hpp"
+#include "texnx/localization/Localization.hpp"
+#include "texnx/ui/AboutView.hpp"
+#include "texnx/ui/HomeView.hpp"
+#include "texnx/ui/SettingsView.hpp"
+#include "texnx/ui/TexturesView.hpp"
+#include "texnx/ui/Theme.hpp"
 
-#include <cerrno>
-#include <cstdio>
 #include <cstring>
+#include <iomanip>
+#include <sstream>
+#include <string>
 
-#include <switch.h>
+#include <borealis.hpp>
 
 namespace texnx {
 namespace {
@@ -15,75 +23,132 @@ namespace {
 using filesystem::DirectoryCheckResult;
 using filesystem::DirectoryState;
 
-const char* statusText(const DirectoryState state) noexcept {
-    switch (state) {
-        case DirectoryState::Found:
-            return "Found";
-        case DirectoryState::NotFound:
-            return "Not Found";
-        case DirectoryState::Error:
-            return "Error";
+void logConfigState(const config::LoadResult& result) {
+    switch (result.state) {
+        case config::LoadState::Loaded:
+            brls::Logger::info("TexNX config loaded");
+            break;
+        case config::LoadState::Missing:
+            brls::Logger::info("TexNX config is missing; using System language");
+            break;
+        case config::LoadState::Invalid:
+            brls::Logger::warning("TexNX config is invalid; using System language");
+            break;
+        case config::LoadState::Error:
+            brls::Logger::warning("TexNX config could not be read (errno {})", result.posixError);
+            break;
     }
-
-    return "Error";
 }
 
-void printDirectoryStatus(const char* label, const char* path,
-                          const DirectoryCheckResult& result) {
-    std::printf("%s:\n%s\nStatus: %s\n", label, path, statusText(result.state));
+std::string commonDialogMessage(localization::Localization& localization,
+                                const DirectoryCheckResult& result) {
+    std::ostringstream message;
+    if (result.state == DirectoryState::NotFound) {
+        message << localization.text("common.not_found_title") << "\n\n"
+                << localization.text("common.not_found_body");
+    } else {
+        message << localization.text("common.error_title") << "\n\n"
+                << localization.text("common.error_body");
+    }
 
+    message << "\n\n" << paths::MinecraftCommon;
     if (result.state == DirectoryState::Error) {
         const char* reason = std::strerror(result.posixError);
-        std::printf("errno: %d (%s)\n", result.posixError,
-                    reason != nullptr ? reason : "Unknown error");
+        message << "\nerrno: " << result.posixError << " ("
+                << (reason != nullptr ? reason : "Unknown error") << ')';
         if (result.nativeResult != 0) {
-            std::printf("libnx Result: 0x%08lX\n",
-                        static_cast<unsigned long>(result.nativeResult));
+            message << "\nlibnx Result: 0x" << std::uppercase << std::hex
+                    << std::setw(8) << std::setfill('0') << result.nativeResult;
         }
     }
 
-    std::printf("\n");
+    return message.str();
+}
+
+void showCommonDialog(localization::Localization& localization,
+                      const DirectoryCheckResult& result) {
+    if (result.state == DirectoryState::Found) {
+        brls::Logger::info("Minecraft Common directory found: {}",
+                           paths::MinecraftCommon);
+        return;
+    }
+
+    auto* dialog = new brls::Dialog(commonDialogMessage(localization, result));
+    dialog->addButton(localization.text("common.ok"), [] {});
+    dialog->open();
 }
 
 } // namespace
 
 int App::run() const {
-    // 通常の NRO startup が libnx service と sdmc device を初期化する。
-    consoleInit(nullptr);
+    auto configResult = config::ConfigStore::load();
+    auto currentConfig = configResult.config;
+    const std::string systemLocale = localization::Localization::detectSystemLocale();
 
-    padConfigureInput(1, HidNpadStyleSet_NpadStandard);
-    PadState pad{};
-    padInitializeDefault(&pad);
+    localization::Localization localization;
+    const bool localizationResourcesLoaded = localization.loadResources();
+    localization.select(currentConfig.language, systemLocale);
 
-    const auto sdCard = filesystem::FileSystem::directoryExists(paths::SdCardRoot);
-    const auto layeredFs =
-        filesystem::FileSystem::directoryExists(paths::MinecraftLayeredFsRoot);
-    const auto common = filesystem::FileSystem::directoryExists(paths::MinecraftCommon);
-
-    std::printf("TexNX\n");
-    std::printf("Version: %s\n\n", TEXNX_VERSION);
-    std::printf("Minecraft: Nintendo Switch Edition\n");
-    std::printf("Title ID: %s\n\n", paths::MinecraftTitleId);
-
-    printDirectoryStatus("SD Card", paths::SdCardRoot, sdCard);
-    printDirectoryStatus("LayeredFS", paths::MinecraftLayeredFsRoot, layeredFs);
-    printDirectoryStatus("Common", paths::MinecraftCommon, common);
-
-    std::printf("Press + to exit\n");
-    consoleUpdate(nullptr);
-
-    while (appletMainLoop()) {
-        padUpdate(&pad);
-        const u64 buttonsDown = padGetButtonsDown(&pad);
-        if ((buttonsDown & HidNpadButton_Plus) != 0) {
-            break;
-        }
-
-        consoleUpdate(nullptr);
+    // Borealis 自身の初期 translation も起動時の有効言語へ合わせる。
+    brls::Platform::APP_LOCALE_DEFAULT = localization.effectiveLocaleTag();
+    if (!brls::Application::init()) {
+        return 1;
     }
 
-    // Homebrew Menu へ戻る前に console resource を解放する。
-    consoleExit(nullptr);
+    brls::Application::getPlatform()->setThemeVariant(brls::ThemeVariant::DARK);
+    ui::applyFixedTheme();
+    brls::Application::createWindow("TexNX");
+    brls::Application::setGlobalQuit(true);
+
+    logConfigState(configResult);
+    if (!localizationResourcesLoaded) {
+        brls::Logger::warning("One or more TexNX translation resources were unavailable; English fallback is active");
+    }
+
+    ui::HomeView* home = nullptr;
+    const auto openScreen = [&](const ui::Screen screen) {
+        switch (screen) {
+            case ui::Screen::Textures:
+                brls::Application::pushActivity(
+                    new brls::Activity(new ui::TexturesView(localization)));
+                break;
+            case ui::Screen::Settings: {
+                auto* settings = new ui::SettingsView(
+                    localization, currentConfig.language,
+                    [&](const config::LanguageMode language) {
+                        currentConfig.language = language;
+                        localization.select(language, systemLocale);
+                        home->refreshText();
+
+                        const auto saveResult = config::ConfigStore::save(currentConfig);
+                        if (!saveResult.succeeded) {
+                            brls::Logger::error(
+                                "Unable to save TexNX config (errno {}, libnx Result {:#x})",
+                                saveResult.posixError, saveResult.nativeResult);
+                            brls::Application::notify(
+                                localization.text("settings.save_failed"));
+                        }
+                    });
+                brls::Application::pushActivity(new brls::Activity(settings));
+                break;
+            }
+            case ui::Screen::About:
+                brls::Application::pushActivity(new brls::Activity(
+                    new ui::AboutView(localization, TEXNX_VERSION)));
+                break;
+        }
+    };
+
+    home = new ui::HomeView(localization, openScreen);
+    brls::Application::pushActivity(new brls::Activity(home));
+
+    const auto common =
+        filesystem::FileSystem::directoryExists(paths::MinecraftCommon);
+    showCommonDialog(localization, common);
+
+    while (brls::Application::mainLoop()) {
+    }
+
     return 0;
 }
 
