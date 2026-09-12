@@ -70,6 +70,8 @@ target_compile_options(TexNX PRIVATE
     $<$<COMPILE_LANGUAGE:C,CXX>:-Wall>
     $<$<COMPILE_LANGUAGE:C,CXX>:-Wextra>
     $<$<COMPILE_LANGUAGE:C,CXX>:-Wpedantic>
+    # Borealis workerの128 KiB stackへ巨大なautomatic objectを戻さない。
+    $<$<COMPILE_LANGUAGE:C,CXX>:-Wframe-larger-than=16384>
 )
 
 target_link_libraries(TexNX PRIVATE borealis)

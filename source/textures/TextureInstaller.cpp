@@ -9,6 +9,8 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
+#include <memory>
+#include <new>
 #include <string>
 #include <string_view>
 #include <sys/stat.h>
@@ -282,7 +284,7 @@ bool createTreeDirectories(const TextureTreeSnapshot& source,
 
 bool copyFile(const std::string& sourcePath, const std::string& destinationPath,
               const std::uint64_t expectedSize,
-              std::array<unsigned char, CopyBufferSize>& buffer,
+              unsigned char* buffer, const std::size_t bufferSize,
               const TextureInstallProgressCallback& progress,
               std::uint64_t& totalCopied,
               std::uint64_t& lastReportedPercent,
@@ -326,10 +328,10 @@ bool copyFile(const std::string& sourcePath, const std::string& destinationPath,
     while (fileCopied < expectedSize) {
         const auto remaining = expectedSize - fileCopied;
         const auto request = static_cast<std::size_t>(
-            std::min<std::uint64_t>(remaining, buffer.size()));
+            std::min<std::uint64_t>(remaining, bufferSize));
         errno = 0;
         const std::size_t bytesRead =
-            std::fread(buffer.data(), 1, request, input);
+            std::fread(buffer, 1, request, input);
         if (bytesRead != request) {
             errorResult = failure(TextureInstallStage::Copying,
                                   TextureInstallError::SourceRead,
@@ -343,7 +345,7 @@ bool copyFile(const std::string& sourcePath, const std::string& destinationPath,
         while (written < bytesRead) {
             errno = 0;
             const std::size_t amount = std::fwrite(
-                buffer.data() + written, 1, bytesRead - written, output);
+                buffer + written, 1, bytesRead - written, output);
             if (amount == 0) {
                 errorResult = failure(TextureInstallStage::Copying,
                                       TextureInstallError::DestinationWrite,
@@ -398,9 +400,9 @@ bool copyFile(const std::string& sourcePath, const std::string& destinationPath,
 }
 
 bool copySnapshot(const TexturePack& pack, const TextureTreeSnapshot& source,
+                  unsigned char* buffer, const std::size_t bufferSize,
                   const TextureInstallProgressCallback& progress,
                   TextureInstallResult& result) {
-    std::array<unsigned char, CopyBufferSize> buffer{};
     std::uint64_t totalCopied = 0;
     std::uint64_t lastReportedPercent = 0;
     std::uint64_t emptyFilesCopied = 0;
@@ -430,8 +432,9 @@ bool copySnapshot(const TexturePack& pack, const TextureTreeSnapshot& source,
             return false;
         }
         result.totalBytes = source.totalBytes;
-        if (!copyFile(sourcePath, destinationPath, entry.size, buffer, progress,
-                      totalCopied, lastReportedPercent, result)) {
+        if (!copyFile(sourcePath, destinationPath, entry.size, buffer,
+                      bufferSize, progress, totalCopied, lastReportedPercent,
+                      result)) {
             return false;
         }
         if (source.totalBytes == 0) {
@@ -536,6 +539,15 @@ TextureInstallResult TextureInstaller::apply(
             return snapshotFailure(destination, TextureInstallStage::Preflight,
                                    TextureInstallError::DestinationPreflight);
         }
+
+        // destinationを変更する前にcopy用heap bufferを確保し、全fileで再利用する。
+        std::unique_ptr<unsigned char[]> copyBuffer(
+            new (std::nothrow) unsigned char[CopyBufferSize]);
+        if (!copyBuffer) {
+            return failure(TextureInstallStage::Preflight,
+                           TextureInstallError::SourcePreflight, ENOMEM, 0,
+                           pack.commonPath);
+        }
         emitProgress(progress, TextureInstallStage::Preflight, 1, 1);
 
         TextureInstallResult result;
@@ -569,10 +581,12 @@ TextureInstallResult TextureInstaller::apply(
         }
         emitProgress(progress, TextureInstallStage::Creating, 1, 1);
 
-        if (!copySnapshot(pack, source, progress, result)) {
+        if (!copySnapshot(pack, source, copyBuffer.get(), CopyBufferSize,
+                          progress, result)) {
             cleanDestination(progress, result);
             return result;
         }
+        copyBuffer.reset();
 
         emitProgress(progress, TextureInstallStage::Committing, 0, 1);
         if (!commitSdCard(result, TextureInstallStage::Committing)) {

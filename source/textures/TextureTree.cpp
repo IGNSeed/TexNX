@@ -8,6 +8,7 @@
 #include <dirent.h>
 #include <limits>
 #include <memory>
+#include <new>
 #include <string>
 #include <sys/stat.h>
 #include <utility>
@@ -108,7 +109,8 @@ void hashUint64(Sha256Context& context, const std::uint64_t value) noexcept {
 }
 
 bool hashFile(Sha256Context& context, const std::string& fullPath,
-              const std::uint64_t expectedSize, int& posixError) noexcept {
+              const std::uint64_t expectedSize, unsigned char* buffer,
+              const std::size_t bufferSize, int& posixError) noexcept {
     errno = 0;
     std::FILE* input = std::fopen(fullPath.c_str(), "rb");
     if (input == nullptr) {
@@ -125,13 +127,12 @@ bool hashFile(Sha256Context& context, const std::string& fullPath,
         return false;
     }
 
-    std::array<unsigned char, HashBufferSize> buffer{};
     std::uint64_t totalRead = 0;
     bool succeeded = true;
     while (true) {
         errno = 0;
         const std::size_t bytesRead =
-            std::fread(buffer.data(), 1, buffer.size(), input);
+            std::fread(buffer, 1, bufferSize, input);
         if (bytesRead > 0) {
             if (!addSize(totalRead, static_cast<std::uint64_t>(bytesRead)) ||
                 totalRead > expectedSize) {
@@ -139,9 +140,9 @@ bool hashFile(Sha256Context& context, const std::string& fullPath,
                 succeeded = false;
                 break;
             }
-            sha256ContextUpdate(&context, buffer.data(), bytesRead);
+            sha256ContextUpdate(&context, buffer, bytesRead);
         }
-        if (bytesRead < buffer.size()) {
+        if (bytesRead < bufferSize) {
             if (std::ferror(input) != 0) {
                 posixError = errno != 0 ? errno : EIO;
                 succeeded = false;
@@ -170,6 +171,14 @@ bool hashFile(Sha256Context& context, const std::string& fullPath,
 
 TextureTreeSnapshot hashSnapshot(std::string_view rootPath,
                                  TextureTreeSnapshot snapshot) {
+    const std::string root(rootPath);
+    // Borealis workerのstackを圧迫しないよう、snapshot全体でheap bufferを再利用する。
+    std::unique_ptr<unsigned char[]> buffer(
+        new (std::nothrow) unsigned char[HashBufferSize]);
+    if (!buffer) {
+        return failure(ENOMEM, root);
+    }
+
     Sha256Context context{};
     sha256ContextCreate(&context);
     sha256ContextUpdate(&context, FingerprintHeader.data(),
@@ -179,7 +188,6 @@ TextureTreeSnapshot hashSnapshot(std::string_view rootPath,
     hashUint64(context, snapshot.totalDirectories);
     hashUint64(context, snapshot.totalBytes);
 
-    const std::string root(rootPath);
     for (const auto& entry : snapshot.entries) {
         const std::uint8_t type =
             entry.type == TextureTreeEntryType::Directory ? 'D' : 'F';
@@ -196,7 +204,8 @@ TextureTreeSnapshot hashSnapshot(std::string_view rootPath,
                 return failure(ENAMETOOLONG, root);
             }
             int readError = 0;
-            if (!hashFile(context, fullPath, entry.size, readError)) {
+            if (!hashFile(context, fullPath, entry.size, buffer.get(),
+                          HashBufferSize, readError)) {
                 return failure(readError, fullPath);
             }
         }
