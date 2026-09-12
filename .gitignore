@@ -1,0 +1,37 @@
+# Codex local project rules
+AGENTS.md
+
+# CMake and build outputs
+build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+# Nintendo Switch build artifacts
+*.nro
+*.elf
+*.nacp
+*.map
+*.nso
+*.nsp
+*.npdm
+
+# Compiler outputs
+*.o
+*.obj
+*.a
+*.d
+
+# Editors and local tooling
+.vs/
+.idea/
+.vscode/*.local.json
+*.code-workspace
+
+# Operating-system and temporary files
+.DS_Store
+Thumbs.db
+*.tmp
+*.temp
+*~
