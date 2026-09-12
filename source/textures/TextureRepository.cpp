@@ -2,6 +2,7 @@
 
 #include "texnx/Paths.hpp"
 #include "texnx/filesystem/FileSystem.hpp"
+#include "texnx/textures/TextureTree.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -224,12 +225,43 @@ TextureScanResult TextureRepository::scan() noexcept {
     return result;
 }
 
-CurrentTextureState TextureRepository::detectCurrentState() noexcept {
-    const auto common =
-        filesystem::FileSystem::directoryExists(paths::MinecraftCommon);
-    return common.state == filesystem::DirectoryState::NotFound
-               ? CurrentTextureState::Default
-               : CurrentTextureState::ExternalOrUnknown;
+CurrentTextureResult TextureRepository::detectCurrentState(
+    const std::vector<TexturePack>& packs) noexcept {
+    const auto installed = TextureTree::inspect(paths::MinecraftCommon, true);
+    if (installed.state == TextureTreeState::Missing) {
+        CurrentTextureResult result;
+        result.state = CurrentTextureState::Default;
+        return result;
+    }
+    if (installed.state == TextureTreeState::Error) {
+        return {CurrentTextureState::Error,
+                std::numeric_limits<std::size_t>::max(),
+                installed.posixError,
+                installed.nativeResult,
+                installed.errorPath};
+    }
+
+    for (std::size_t index = 0; index < packs.size(); ++index) {
+        const auto candidate =
+            TextureTree::inspect(packs[index].commonPath, true);
+        if (candidate.state != TextureTreeState::Ready) {
+            return {CurrentTextureState::Error,
+                    std::numeric_limits<std::size_t>::max(),
+                    candidate.posixError,
+                    candidate.nativeResult,
+                    candidate.errorPath};
+        }
+        if (TextureTree::fingerprintsEqual(installed, candidate)) {
+            CurrentTextureResult result;
+            result.state = CurrentTextureState::KnownPack;
+            result.matchedPackIndex = index;
+            return result;
+        }
+    }
+
+    CurrentTextureResult result;
+    result.state = CurrentTextureState::ExternalOrUnknown;
+    return result;
 }
 
 } // namespace texnx::textures

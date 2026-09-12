@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(TexNX VERSION 0.3.0 LANGUAGES C CXX)
+project(TexNX VERSION 0.4.0 LANGUAGES C CXX)
 
 if(NOT NINTENDO_SWITCH)
     message(FATAL_ERROR
@@ -42,7 +42,9 @@ add_executable(TexNX
     source/filesystem/FileSystem.cpp
     source/localization/Localization.cpp
     source/platform/SwitchLifecycle.c
+    source/textures/TextureInstaller.cpp
     source/textures/TextureRepository.cpp
+    source/textures/TextureTree.cpp
     source/ui/AboutView.cpp
     source/ui/Components.cpp
     source/ui/HomeView.cpp

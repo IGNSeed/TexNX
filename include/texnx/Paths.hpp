@@ -4,6 +4,11 @@ namespace texnx::paths {
 
 inline constexpr char MinecraftTitleId[] = "01006BD001E06000";
 inline constexpr char SdCardRoot[] = "sdmc:/";
+inline constexpr char AtmosphereDirectory[] = "sdmc:/atmosphere";
+inline constexpr char AtmosphereContentsDirectory[] =
+    "sdmc:/atmosphere/contents";
+inline constexpr char MinecraftContentsDirectory[] =
+    "sdmc:/atmosphere/contents/01006BD001E06000";
 inline constexpr char MinecraftLayeredFsRoot[] =
     "sdmc:/atmosphere/contents/01006BD001E06000/romfs";
 inline constexpr char MinecraftCommon[] =
