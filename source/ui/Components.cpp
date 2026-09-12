@@ -85,4 +85,18 @@ void registerBackAction(brls::View& view, const std::string& hint) {
                         true, false, brls::SOUND_BACK);
 }
 
+void pushResponsiveActivity(brls::View* view) {
+    if (view == nullptr) {
+        return;
+    }
+
+    // 標準のfade中に行われるglobal input blockを避け、同じfadeだけをView側で再生する。
+    const float duration =
+        view->getShowAnimationDuration(brls::TransitionAnimation::FADE);
+    view->hide([] {}, false, 0.0F);
+    brls::Application::pushActivity(new brls::Activity(view),
+                                    brls::TransitionAnimation::NONE);
+    view->show([] {}, duration > 0.0F, duration);
+}
+
 } // namespace texnx::ui::components

@@ -5,6 +5,7 @@
 #include "texnx/filesystem/FileSystem.hpp"
 #include "texnx/localization/Localization.hpp"
 #include "texnx/ui/AboutView.hpp"
+#include "texnx/ui/Components.hpp"
 #include "texnx/ui/HomeView.hpp"
 #include "texnx/ui/SettingsView.hpp"
 #include "texnx/ui/TexturesView.hpp"
@@ -16,6 +17,7 @@
 #include <string>
 
 #include <borealis.hpp>
+#include <borealis/core/thread.hpp>
 
 namespace texnx {
 namespace {
@@ -109,40 +111,45 @@ int App::run() const {
 
     ui::HomeView* home = nullptr;
     const auto openScreen = [&](const ui::Screen screen) {
-        switch (screen) {
-            case ui::Screen::Textures:
-                brls::Application::pushActivity(
-                    new brls::Activity(new ui::TexturesView(localization)));
-                break;
-            case ui::Screen::Settings: {
-                auto* settings = new ui::SettingsView(
-                    localization, currentConfig.language,
-                    [&](const config::LanguageMode language) {
-                        currentConfig.language = language;
-                        localization.select(language, systemLocale);
-                        home->refreshText();
+        // click animationを現在frameで描画してから、次の画面を生成する。
+        brls::sync([&, screen] {
+            switch (screen) {
+                case ui::Screen::Textures:
+                    ui::components::pushResponsiveActivity(
+                        new ui::TexturesView(localization));
+                    break;
+                case ui::Screen::Settings: {
+                    auto* settings = new ui::SettingsView(
+                        localization, currentConfig.language,
+                        [&](const config::LanguageMode language) {
+                            currentConfig.language = language;
+                            localization.select(language, systemLocale);
+                            home->refreshText();
 
-                        const auto saveResult = config::ConfigStore::save(currentConfig);
-                        if (!saveResult.succeeded) {
-                            brls::Logger::error(
-                                "Unable to save TexNX config (errno {}, libnx Result {:#x})",
-                                saveResult.posixError, saveResult.nativeResult);
-                            brls::Application::notify(
-                                localization.text("settings.save_failed"));
-                        }
-                    });
-                brls::Application::pushActivity(new brls::Activity(settings));
-                break;
+                            const auto saveResult =
+                                config::ConfigStore::save(currentConfig);
+                            if (!saveResult.succeeded) {
+                                brls::Logger::error(
+                                    "Unable to save TexNX config (errno {}, libnx Result {:#x})",
+                                    saveResult.posixError,
+                                    saveResult.nativeResult);
+                                brls::Application::notify(
+                                    localization.text("settings.save_failed"));
+                            }
+                        });
+                    ui::components::pushResponsiveActivity(settings);
+                    break;
+                }
+                case ui::Screen::About:
+                    ui::components::pushResponsiveActivity(
+                        new ui::AboutView(localization, TEXNX_VERSION));
+                    break;
             }
-            case ui::Screen::About:
-                brls::Application::pushActivity(new brls::Activity(
-                    new ui::AboutView(localization, TEXNX_VERSION)));
-                break;
-        }
+        });
     };
 
     home = new ui::HomeView(localization, openScreen);
-    brls::Application::pushActivity(new brls::Activity(home));
+    ui::components::pushResponsiveActivity(home);
 
     const auto common =
         filesystem::FileSystem::directoryExists(paths::MinecraftCommon);

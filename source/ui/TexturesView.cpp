@@ -25,6 +25,8 @@ constexpr char TextureCellIdentifier[] = "TexNXTextureCell";
 constexpr std::size_t MaximumIconFileBytes = 2 * 1024 * 1024;
 constexpr int MaximumIconDimension = 512;
 constexpr float TextureRowHeight = 112.0F;
+constexpr float TextureIconFrameSize = 84.0F;
+constexpr float TextureIconSize = 80.0F;
 
 struct TextureListEntry {
     std::string name;
@@ -110,21 +112,38 @@ public:
     TextureCell() {
         setAxis(brls::Axis::ROW);
         setAlignItems(brls::AlignItems::CENTER);
+        setFocusable(true);
         setHeight(TextureRowHeight);
-        setPadding(12, 18, 12, 18);
+        setPadding(10, 16, 10, 16);
         setClipsToBounds(true);
+        setHighlightCornerRadius(8);
+
+        auto* iconFrame = new brls::Box(brls::Axis::ROW);
+        iconFrame->setWidth(TextureIconFrameSize);
+        iconFrame->setHeight(TextureIconFrameSize);
+        iconFrame->setShrink(0);
+        iconFrame->setAlignItems(brls::AlignItems::CENTER);
+        iconFrame->setJustifyContent(brls::JustifyContent::CENTER);
+        iconFrame->setMarginRight(20);
+        iconFrame->setCornerRadius(8);
+        iconFrame->setClipsToBounds(true);
+        iconFrame->setBackgroundColor(
+            brls::Application::getTheme()["texnx/background"]);
 
         icon_ = new brls::Image();
-        icon_->setWidth(84);
-        icon_->setHeight(84);
-        icon_->setMarginRight(20);
-        icon_->setCornerRadius(7);
-        icon_->setScalingType(brls::ImageScalingType::FILL);
+        icon_->setWidth(TextureIconSize);
+        icon_->setHeight(TextureIconSize);
+        icon_->setShrink(0);
+        icon_->setCornerRadius(6);
+        icon_->setClipsToBounds(true);
+        icon_->setScalingType(brls::ImageScalingType::FIT);
         icon_->setFreeTexture(true);
-        addView(icon_);
+        iconFrame->addView(icon_);
+        addView(iconFrame);
 
         auto* textColumn = new brls::Box(brls::Axis::COLUMN);
         textColumn->setGrow(1);
+        textColumn->setShrink(1);
         textColumn->setJustifyContent(brls::JustifyContent::CENTER);
         textColumn->setClipsToBounds(true);
 
@@ -253,9 +272,12 @@ TexturesView::TexturesView(localization::Localization& localization)
     const auto scanResult = textures::TextureRepository::scan();
     const auto currentState =
         textures::TextureRepository::detectCurrentState();
+    auto entries = makeEntries(scanResult, currentState, localization_);
+    const bool hasEntries = !entries.empty();
 
     auto* panel = components::makePanel();
     panel->setGrow(1);
+    panel->setClipsToBounds(true);
 
     const auto currentText =
         currentState == textures::CurrentTextureState::Default
@@ -278,20 +300,30 @@ TexturesView::TexturesView(localization::Localization& localization)
             brls::HorizontalAlign::CENTER));
     }
 
-    auto* recycler = new brls::RecyclerFrame();
-    recycler->setGrow(1);
-    recycler->setWidthPercentage(100);
-    recycler->estimatedRowHeight = TextureRowHeight;
-    recycler->registerCell(TextureCellIdentifier,
-                           [] { return new TextureCell(); });
-    recycler->setDefaultCellFocus(brls::IndexPath(0, 0));
-    recycler->setDataSource(new TextureDataSource(
-        makeEntries(scanResult, currentState, localization_),
-        localization_.text("textures.apply_unavailable")));
-    panel->addView(recycler);
+    if (hasEntries) {
+        auto* recycler = new brls::RecyclerFrame();
+        recycler->setGrow(1);
+        recycler->setWidthPercentage(100);
+        recycler->setClipsToBounds(true);
+        recycler->estimatedRowHeight = TextureRowHeight;
+        recycler->registerCell(TextureCellIdentifier,
+                               [] { return new TextureCell(); });
+        recycler->setDefaultCellFocus(brls::IndexPath(0, 0));
+        recycler->setDataSource(new TextureDataSource(
+            std::move(entries),
+            localization_.text("textures.apply_unavailable")));
+        panel->addView(recycler);
+        panel->setDefaultFocusedIndex(
+            static_cast<int>(panel->getChildren().size() - 1));
+    }
 
     addView(panel);
-    addView(components::makeBackButton(localization_.text("common.back")));
+    auto* backButton =
+        components::makeBackButton(localization_.text("common.back"));
+    addView(backButton);
+
+    // 通常はDefault entryがあるため一覧を選び、将来0件になった場合はBackを選ぶ。
+    setDefaultFocusedIndex(hasEntries ? 1 : 2);
 }
 
 } // namespace texnx::ui

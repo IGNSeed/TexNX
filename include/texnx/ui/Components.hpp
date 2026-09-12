@@ -14,5 +14,6 @@ void configureScreen(brls::Box& screen);
 [[nodiscard]] brls::Button* makeBackButton(const std::string& text);
 [[nodiscard]] brls::Box* makePanel();
 void registerBackAction(brls::View& view, const std::string& hint);
+void pushResponsiveActivity(brls::View* view);
 
 } // namespace texnx::ui::components
