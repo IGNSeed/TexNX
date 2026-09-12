@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(TexNX VERSION 0.2.0 LANGUAGES C CXX)
+project(TexNX VERSION 0.3.0 LANGUAGES C CXX)
 
 if(NOT NINTENDO_SWITCH)
     message(FATAL_ERROR
@@ -42,6 +42,7 @@ add_executable(TexNX
     source/filesystem/FileSystem.cpp
     source/localization/Localization.cpp
     source/platform/SwitchLifecycle.c
+    source/textures/TextureRepository.cpp
     source/ui/AboutView.cpp
     source/ui/Components.cpp
     source/ui/HomeView.cpp
@@ -77,13 +78,23 @@ target_link_options(TexNX PRIVATE
 )
 
 set(TEXNX_ROMFS_DIR "${CMAKE_CURRENT_BINARY_DIR}/romfs")
+set(TEXNX_DEFAULT_ICON_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/default/_icon.png")
+if(NOT EXISTS "${TEXNX_DEFAULT_ICON_SOURCE}")
+    message(FATAL_ERROR
+        "TexNX default texture icon is missing: assets/default/_icon.png")
+endif()
+
 file(MAKE_DIRECTORY
+    "${TEXNX_ROMFS_DIR}/assets/default"
     "${TEXNX_ROMFS_DIR}/i18n/en-US"
     "${TEXNX_ROMFS_DIR}/i18n/ja-JP"
     "${TEXNX_ROMFS_DIR}/material"
     "${TEXNX_ROMFS_DIR}/shaders"
 )
 
+configure_file("${TEXNX_DEFAULT_ICON_SOURCE}"
+    "${TEXNX_ROMFS_DIR}/assets/default/_icon.png" COPYONLY)
 configure_file(resources/i18n/en-US/texnx.json
     "${TEXNX_ROMFS_DIR}/i18n/en-US/texnx.json" COPYONLY)
 configure_file(resources/i18n/ja-JP/texnx.json

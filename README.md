@@ -2,9 +2,9 @@
 
 TexNX は、Atmosphere CFW を導入した Nintendo Switch 上で動作する、Minecraft: Nintendo Switch Edition 向けの非公式 Homebrew アプリケーションです。対象 Title ID は `01006BD001E06000` です。
 
-現在のバージョンは `0.2.0` です。Borealis による controller／touch 対応 GUI、英語／日本語表示、言語設定の保存、将来のテクスチャ一覧用画面を備えています。この版はテクスチャファイルを走査・コピー・削除・置換・バックアップ・復元・展開・ダウンロードしません。
+現在のバージョンは `0.3.0` です。Borealis による controller／touch 対応 GUI、英語／日本語表示、言語設定の保存、SDカード上のテクスチャパック一覧表示を備えています。この版はテクスチャをMinecraftへ適用せず、Commonのコピー・削除・置換やbackup／restoreも行いません。
 
-## v0.2.0 の機能
+## v0.3.0 の機能
 
 - `Textures`、`Settings`、`About` を独立した画面として持つ Home 画面
 - Handheld／Docked の表示サイズに追従する Borealis flex layout
@@ -18,8 +18,12 @@ TexNX は、Atmosphere CFW を導入した Nintendo Switch 上で動作する、
 - 日本語表示には Borealis の libnx backend が読み込む Switch shared system font を使用
 - `sdmc:/atmosphere/contents/01006BD001E06000/romfs/Common` を読み取り専用で確認
 - Common が存在しない場合または確認 error の場合だけ Dialog を表示し、GUI 自体は利用可能なまま維持
+- `sdmc:/switch/TexNX/Textures/<Pack>/Common` 形式のテクスチャパックを画面を開くたびに一覧化
+- directory名、`Common/res/description.txt` の先頭行、`Common/res/gui/pack_icon.png` を表示
+- iconがない、壊れている、対応外の場合はNRO内蔵のdefault iconへfallback
+- 常に先頭へ`Default` entryを表示し、実際のCommonがある場合は`External / Unknown`と表示
 
-`Textures` は今後の一覧を受け入れるための placeholder です。v0.2.0 にテクスチャ適用処理や backup／restore 機能はありません。
+`Textures` は一覧表示専用です。v0.3.0 にテクスチャ適用処理やbackup／restore機能はありません。
 
 ## 開発環境
 
@@ -54,7 +58,7 @@ cmake -S . -B build -G Ninja \
 cmake --build build --parallel
 ```
 
-生成物は `build/TexNX.nro` です。必要な shader、font、i18n resource は NRO 内の RomFS に収録されるため、実機への配布物はこの NRO 1 ファイルだけです。NACP の app name は `TexNX`、version は CMake project version と同じ `0.2.0`、author は `IGNSeed` です。専用の権利クリアな artwork がないため custom icon は同梱していません。
+生成物は `build/TexNX.nro` です。必要な shader、font、i18n resource、default texture iconはNRO内のRomFSに収録されるため、実機への配布物はこのNRO 1ファイルだけです。NACPのapp nameは`TexNX`、versionはCMake project versionと同じ`0.3.0`、authorは`IGNSeed`です。専用の権利クリアなapplication artworkがないためcustom application iconは同梱していません。
 
 ## 配置と操作
 
@@ -66,15 +70,24 @@ sdmc:/switch/TexNX/TexNX.nro
 
 Homebrew Menu から起動し、controller または touch で操作します。初回の言語は Switch 本体設定を参照し、日本語と英語以外の本体言語は英語表示になります。言語は Settings から起動中に即時変更でき、次回起動用として `config.json` に保存されます。
 
+テクスチャパックは次の構造で配置します。`Common`がないdirectoryは一覧に表示されません。
+
+```text
+sdmc:/switch/TexNX/Textures/<Pack>/Common/
+├── res/gui/pack_icon.png       # 任意
+└── res/description.txt         # 任意、先頭行のみ使用
+```
+
 Common が見つかった場合は通常 UI に status を追加しません。見つからない場合や読み取り error の場合は Dialog で通知しますが、TexNX は終了せず各画面を利用できます。
 
 ## Runtime のファイル操作
 
-v0.2.0 が書き込む可能性があるのは、言語を選択したときの次の場所だけです。
+v0.3.0 が書き込む可能性があるのは、言語設定とTextures directory作成に必要な次の場所だけです。
 
 ```text
 sdmc:/switch/TexNX/
 sdmc:/switch/TexNX/config.json
+sdmc:/switch/TexNX/Textures/
 ```
 
 安全な置換のため同じ directory に一時的な `config.json.tmp` を作成し、完了後に置き換えます。Atmosphere、LayeredFS、Minecraft の `Common` 以下には一切書き込みません。
