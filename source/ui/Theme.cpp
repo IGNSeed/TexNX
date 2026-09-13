@@ -45,6 +45,16 @@ void applyFixedTheme() {
 
     theme.addColor("texnx/background", black);
     theme.addColor("texnx/panel", darkGray);
+    theme.addColor("texnx/content_background", black);
+    theme.addColor("texnx/sidebar_background", nvgRGB(20, 20, 20));
+    theme.addColor("texnx/sidebar_selected", nvgRGB(40, 40, 40));
+    theme.addColor("texnx/sidebar_accent", white);
+    theme.addColor("texnx/card", darkGray);
+    theme.addColor("texnx/icon_background", black);
+    theme.addColor("texnx/row_selected", nvgRGB(38, 38, 38));
+    theme.addColor("texnx/divider", nvgRGB(62, 62, 62));
+    theme.addColor("texnx/footer_background", nvgRGB(16, 16, 16));
+    theme.addColor("texnx/progress_track", gray);
     theme.addColor("texnx/text", white);
     theme.addColor("texnx/text_secondary", lightGray);
 }

@@ -4,11 +4,7 @@
 #include "texnx/config/Config.hpp"
 #include "texnx/filesystem/FileSystem.hpp"
 #include "texnx/localization/Localization.hpp"
-#include "texnx/ui/AboutView.hpp"
-#include "texnx/ui/Components.hpp"
-#include "texnx/ui/HomeView.hpp"
-#include "texnx/ui/SettingsView.hpp"
-#include "texnx/ui/TexturesView.hpp"
+#include "texnx/ui/MainShellView.hpp"
 #include "texnx/ui/Theme.hpp"
 
 #include <cstring>
@@ -17,7 +13,6 @@
 #include <string>
 
 #include <borealis.hpp>
-#include <borealis/core/thread.hpp>
 
 namespace texnx {
 namespace {
@@ -45,23 +40,16 @@ void logConfigState(const config::LoadResult& result) {
 std::string commonDialogMessage(localization::Localization& localization,
                                 const DirectoryCheckResult& result) {
     std::ostringstream message;
-    if (result.state == DirectoryState::NotFound) {
-        message << localization.text("common.not_found_title") << "\n\n"
-                << localization.text("common.not_found_body");
-    } else {
-        message << localization.text("common.error_title") << "\n\n"
-                << localization.text("common.error_body");
-    }
+    message << localization.text("common.error_title") << "\n\n"
+            << localization.text("common.error_body");
 
     message << "\n\n" << paths::MinecraftCommon;
-    if (result.state == DirectoryState::Error) {
-        const char* reason = std::strerror(result.posixError);
-        message << "\nerrno: " << result.posixError << " ("
-                << (reason != nullptr ? reason : "Unknown error") << ')';
-        if (result.nativeResult != 0) {
-            message << "\nlibnx Result: 0x" << std::uppercase << std::hex
-                    << std::setw(8) << std::setfill('0') << result.nativeResult;
-        }
+    const char* reason = std::strerror(result.posixError);
+    message << "\nerrno: " << result.posixError << " ("
+            << (reason != nullptr ? reason : "Unknown error") << ')';
+    if (result.nativeResult != 0) {
+        message << "\nlibnx Result: 0x" << std::uppercase << std::hex
+                << std::setw(8) << std::setfill('0') << result.nativeResult;
     }
 
     return message.str();
@@ -72,6 +60,11 @@ void showCommonDialog(localization::Localization& localization,
     if (result.state == DirectoryState::Found) {
         brls::Logger::info("Minecraft Common directory found: {}",
                            paths::MinecraftCommon);
+        return;
+    }
+    if (result.state == DirectoryState::NotFound) {
+        // CommonなしはMinecraft default textureを表す正常状態。
+        brls::Logger::info("Minecraft Common directory is absent; Default is active");
         return;
     }
 
@@ -109,47 +102,29 @@ int App::run() const {
         brls::Logger::warning("One or more TexNX translation resources were unavailable; English fallback is active");
     }
 
-    ui::HomeView* home = nullptr;
-    const auto openScreen = [&](const ui::Screen screen) {
-        // click animationを現在frameで描画してから、次の画面を生成する。
-        brls::sync([&, screen] {
-            switch (screen) {
-                case ui::Screen::Textures:
-                    ui::components::pushResponsiveActivity(
-                        new ui::TexturesView(localization));
-                    break;
-                case ui::Screen::Settings: {
-                    auto* settings = new ui::SettingsView(
-                        localization, currentConfig.language,
-                        [&](const config::LanguageMode language) {
-                            currentConfig.language = language;
-                            localization.select(language, systemLocale);
-                            home->refreshText();
+    ui::MainShellView* shell = nullptr;
+    shell = new ui::MainShellView(
+        localization, currentConfig.language, TEXNX_VERSION,
+        [&](const config::LanguageMode language) {
+            currentConfig.language = language;
+            localization.select(language, systemLocale);
+            if (shell != nullptr) {
+                shell->refreshText();
+            }
 
-                            const auto saveResult =
-                                config::ConfigStore::save(currentConfig);
-                            if (!saveResult.succeeded) {
-                                brls::Logger::error(
-                                    "Unable to save TexNX config (errno {}, libnx Result {:#x})",
-                                    saveResult.posixError,
-                                    saveResult.nativeResult);
-                                brls::Application::notify(
-                                    localization.text("settings.save_failed"));
-                            }
-                        });
-                    ui::components::pushResponsiveActivity(settings);
-                    break;
-                }
-                case ui::Screen::About:
-                    ui::components::pushResponsiveActivity(
-                        new ui::AboutView(localization, TEXNX_VERSION));
-                    break;
+            const auto saveResult = config::ConfigStore::save(currentConfig);
+            if (!saveResult.succeeded) {
+                brls::Logger::error(
+                    "Unable to save TexNX config (errno {}, libnx Result {:#x})",
+                    saveResult.posixError, saveResult.nativeResult);
+                brls::Application::notify(
+                    localization.text("settings.save_failed"));
             }
         });
-    };
-
-    home = new ui::HomeView(localization, openScreen);
-    ui::components::pushResponsiveActivity(home);
+    brls::Application::pushActivity(new brls::Activity(shell),
+                                    brls::TransitionAnimation::NONE);
+    // global quit actionはpush時に追加されるため、その後にlocalized hintを反映する。
+    shell->refreshText();
 
     const auto common =
         filesystem::FileSystem::directoryExists(paths::MinecraftCommon);

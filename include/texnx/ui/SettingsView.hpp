@@ -21,8 +21,12 @@ public:
                  config::LanguageMode selectedLanguage,
                  LanguageChangedCallback languageChanged);
     void refreshText();
+    void focusContent();
+    void setReturnToSidebarCallback(std::function<void()> callback);
 
 private:
+    class LanguageRow;
+
     void selectLanguage(config::LanguageMode mode);
 
     localization::Localization& localization_;
@@ -31,8 +35,9 @@ private:
     brls::Label* title_{nullptr};
     brls::Label* description_{nullptr};
     brls::Label* languageLabel_{nullptr};
-    std::array<brls::Button*, 3> languageButtons_{};
-    brls::Button* backButton_{nullptr};
+    std::array<LanguageRow*, 3> languageRows_{};
+    std::function<void()> returnToSidebar_;
+    std::size_t lastFocusedIndex_{0};
 };
 
 } // namespace texnx::ui

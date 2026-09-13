@@ -1,21 +1,30 @@
 #include "texnx/ui/Components.hpp"
 
+#include "texnx/ui/UiMetrics.hpp"
+
 namespace texnx::ui::components {
 
-void configureScreen(brls::Box& screen) {
-    screen.setAxis(brls::Axis::COLUMN);
-    screen.setAlignItems(brls::AlignItems::CENTER);
-    screen.setPadding(44, 72, 40, 72);
-    screen.setBackgroundColor(brls::Application::getTheme()["texnx/background"]);
+void configureContentPane(brls::Box& pane) {
+    pane.setAxis(brls::Axis::COLUMN);
+    pane.setGrow(1);
+    pane.setShrink(1);
+    pane.setMinWidth(0);
+    pane.setMinHeight(0);
+    pane.setPadding(metrics::ContentPaddingTop,
+                    metrics::ContentPaddingHorizontal,
+                    metrics::ContentPaddingBottom,
+                    metrics::ContentPaddingHorizontal);
+    pane.setBackgroundColor(
+        brls::Application::getTheme()["texnx/content_background"]);
 }
 
 brls::Label* makeTitle(const std::string& text) {
     auto* label = new brls::Label();
     label->setText(text);
-    label->setFontSize(42);
-    label->setHeight(64);
+    label->setFontSize(metrics::PageTitleSize);
+    label->setHeight(metrics::PageTitleHeight);
     label->setWidthPercentage(100);
-    label->setHorizontalAlign(brls::HorizontalAlign::CENTER);
+    label->setHorizontalAlign(brls::HorizontalAlign::LEFT);
     label->setTextColor(brls::Application::getTheme()["texnx/text"]);
     label->setSingleLine(true);
     return label;
@@ -24,10 +33,11 @@ brls::Label* makeTitle(const std::string& text) {
 brls::Label* makeBody(const std::string& text) {
     auto* label = new brls::Label();
     label->setText(text);
-    label->setFontSize(23);
+    label->setFontSize(metrics::BodySize);
     label->setWidthPercentage(100);
-    label->setHorizontalAlign(brls::HorizontalAlign::CENTER);
-    label->setTextColor(brls::Application::getTheme()["texnx/text_secondary"]);
+    label->setHorizontalAlign(brls::HorizontalAlign::LEFT);
+    label->setTextColor(
+        brls::Application::getTheme()["texnx/text_secondary"]);
     label->setSingleLine(false);
     return label;
 }
@@ -35,8 +45,8 @@ brls::Label* makeBody(const std::string& text) {
 brls::Label* makeSectionLabel(const std::string& text) {
     auto* label = new brls::Label();
     label->setText(text);
-    label->setFontSize(28);
-    label->setHeight(48);
+    label->setFontSize(metrics::SectionTitleSize);
+    label->setHeight(metrics::SectionTitleHeight);
     label->setWidthPercentage(100);
     label->setHorizontalAlign(brls::HorizontalAlign::LEFT);
     label->setTextColor(brls::Application::getTheme()["texnx/text"]);
@@ -44,59 +54,24 @@ brls::Label* makeSectionLabel(const std::string& text) {
     return label;
 }
 
-brls::Button* makeButton(const std::string& text) {
-    auto* button = new brls::Button();
-    button->setText(text);
-    button->setStyle(&brls::BUTTONSTYLE_DEFAULT);
-    button->setFontSize(25);
-    button->setHeight(68);
-    button->setWidthPercentage(100);
-    button->setCornerRadius(8);
-    button->setMarginBottom(14);
-    return button;
-}
-
-brls::Button* makeBackButton(const std::string& text) {
-    auto* button = makeButton(text);
-    button->setWidthPercentage(44);
-    button->setMaxWidth(380);
-    button->setMarginTop(24);
-    button->registerClickAction([](brls::View*) {
-        return brls::Application::popActivity();
-    });
-    return button;
-}
-
 brls::Box* makePanel() {
     auto* panel = new brls::Box(brls::Axis::COLUMN);
-    panel->setWidthPercentage(78);
-    panel->setMaxWidth(900);
-    panel->setPadding(32);
-    panel->setCornerRadius(12);
-    panel->setBackgroundColor(brls::Application::getTheme()["texnx/panel"]);
+    panel->setWidthPercentage(100);
+    panel->setPadding(metrics::CardPadding);
+    panel->setCornerRadius(metrics::CardRadius);
+    panel->setClipsToBounds(true);
+    panel->setBackgroundColor(
+        brls::Application::getTheme()["texnx/card"]);
     return panel;
 }
 
-void registerBackAction(brls::View& view, const std::string& hint) {
-    view.registerAction(hint, brls::BUTTON_B,
-                        [](brls::View*) {
-                            return brls::Application::popActivity();
-                        },
-                        true, false, brls::SOUND_BACK);
-}
-
-void pushResponsiveActivity(brls::View* view) {
-    if (view == nullptr) {
-        return;
-    }
-
-    // 標準のfade中に行われるglobal input blockを避け、同じfadeだけをView側で再生する。
-    const float duration =
-        view->getShowAnimationDuration(brls::TransitionAnimation::FADE);
-    view->hide([] {}, false, 0.0F);
-    brls::Application::pushActivity(new brls::Activity(view),
-                                    brls::TransitionAnimation::NONE);
-    view->show([] {}, duration > 0.0F, duration);
+brls::Rectangle* makeDivider() {
+    auto* divider = new brls::Rectangle(
+        brls::Application::getTheme()["texnx/divider"]);
+    divider->setWidthPercentage(100);
+    divider->setHeight(metrics::DividerSize);
+    divider->setShrink(0);
+    return divider;
 }
 
 } // namespace texnx::ui::components

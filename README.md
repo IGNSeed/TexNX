@@ -2,28 +2,31 @@
 
 TexNX は、Atmosphere CFW を導入した Nintendo Switch 上で動作する、Minecraft: Nintendo Switch Edition 向けの非公式 Homebrew アプリケーションです。対象 Title ID は `01006BD001E06000` です。
 
-現在のバージョンは `0.4.0` です。Borealis による controller／touch 対応 GUI、英語／日本語表示、言語設定の保存、SDカード上のテクスチャパック一覧表示とMinecraft LayeredFSへの適用を備えています。
+現在のバージョンは `0.5.0` です。Borealis による controller／touch 対応 GUI、英語／日本語表示、言語設定の保存、SDカード上のテクスチャパック一覧表示とMinecraft LayeredFSへの適用を備えています。
 
-## v0.4.0 の機能
+## v0.5.0 の機能
 
-- `Textures`、`Settings`、`About` を独立した画面として持つ Home 画面
-- Handheld／Docked の表示サイズに追従する Borealis flex layout
+- `Textures`、`Settings`、`About` を左Sidebarから切り替える単一Main Activity
+- 選択中tabを維持するSidebarと、共通のPage Header／Content／Button Hints
+- Sidebarのfocus移動と同時にcontentを切り替える、入力をblockしない短いfade
+- Handheld／Docked の表示サイズに追従するBorealis／Yoga flex layout
 - controller と touch による標準的な UI 操作
-- `A` で決定、サブ画面では `B` または画面内の戻る Button で Home へ戻る
-- 通常時はどの画面からでも `PLUS` で安全に終了し、適用処理中だけは不完全なCommonを残さないため終了入力を無効化
+- Sidebarでは`UP`／`DOWN`でtabを選択し、`A`または`RIGHT`でcontentへ移動
+- Contentでは`LEFT`または`B`でSidebarへ戻り、`PLUS`で終了
+- 適用処理中だけは不完全なCommonを残さないため通常操作と終了入力を無効化
 - 固定された black／dark gray／gray／white の配色
 - `System`（既定）、`English`、`日本語` の言語選択
 - `sdmc:/switch/TexNX/config.json` への言語設定だけの保存
 - config が存在しない、空、壊れている、未知の値を含む場合は `System` へ安全に fallback
 - 日本語表示には Borealis の libnx backend が読み込む Switch shared system font を使用
-- `sdmc:/switch/TexNX/Textures/<Pack>/Common` 形式のテクスチャパックを画面を開くたびに一覧化
+- `sdmc:/switch/TexNX/Textures/<Pack>/Common` 形式のテクスチャパックをTextures tabが有効になるたびに一覧化
 - directory名、`Common/res/description.txt` の先頭行、`Common/res/gui/pack_icon.png` を表示
 - iconがない、壊れている、対応外の場合はNRO内蔵のdefault iconへfallback
 - 常に先頭へ`Default` entryを表示し、packまたはDefaultの選択時に安全側の確認Dialogを表示
 - 適用元Commonを全走査してから既存Minecraft Commonを完全削除し、128 KiB bufferで元packを変更せず再帰copy
 - file byte数に基づく進捗Dialogと、copy後のSHA-256 fingerprint検証
 - `Default`の選択ではLayeredFS Commonを完全削除し、ゲーム内蔵テクスチャへ戻す
-- 実際のMinecraft Commonと各packを照合し、`Current`と選択中の`✓`を更新
+- 実際のMinecraft Commonと各packを照合し、Current Texture cardと選択中の印を更新
 - Known packと一致しないCommonは`External / Unknown`と表示
 - TexNX外でCommonを手動配置した場合も、内容がKnown packと完全一致すればそのpackとして検出
 
@@ -64,7 +67,7 @@ cmake -S . -B build -G Ninja \
 cmake --build build --parallel
 ```
 
-生成物は `build/TexNX.nro` です。必要な shader、font、i18n resource、default texture iconはNRO内のRomFSに収録されるため、実機への配布物はこのNRO 1ファイルだけです。NACPのapp nameは`TexNX`、versionはCMake project versionと同じ`0.4.0`、authorは`IGNSeed`です。専用の権利クリアなapplication artworkがないためcustom application iconは同梱していません。
+生成物は `build/TexNX.nro` です。必要な shader、font、i18n resource、default texture iconはNRO内のRomFSに収録されるため、実機への配布物はこのNRO 1ファイルだけです。NACPのapp nameは`TexNX`、versionはCMake project versionと同じ`0.5.0`、authorは`IGNSeed`です。専用の権利クリアなapplication artworkがないためcustom application iconは同梱していません。
 
 ## 配置と操作
 
@@ -84,7 +87,7 @@ sdmc:/switch/TexNX/Textures/<Pack>/Common/
 └── res/description.txt         # 任意、先頭行のみ使用
 ```
 
-Common が見つかった場合は通常 UI に status を追加しません。見つからない場合や読み取り error の場合は Dialog で通知しますが、TexNX は終了せず各画面を利用できます。
+Minecraft LayeredFSのCommonが存在しない状態はゲーム内蔵の`Default`として正常に扱い、起動時Dialogは表示しません。存在確認そのものがI/O errorになった場合だけDialogで通知し、TexNXは終了せず利用できます。
 
 Textures画面でpackを選択すると、確認後に次の順序で適用します。
 
@@ -93,13 +96,13 @@ Textures画面でpackを選択すると、確認後に次の順序で適用し�
 3. 新しいCommon directoryを作成
 4. 選択packのCommonをstreaming copy
 5. sourceとdestinationのfingerprint一致を検証
-6. `Current`と`✓`を実際のCommonから再判定
+6. Current Texture cardと一覧の選択中表示を実際のCommonから再判定
 
 事前検証に失敗した場合は既存Commonを変更しません。削除に失敗した場合は新しいcopyを開始しません。削除開始後のcopyや検証に失敗した場合は、不完全なdestination Commonをbest-effortで削除し、ゲーム内蔵Defaultへfallbackできる状態を目指します。適用開始後の途中cancelはありません。
 
 ## Runtime のファイル操作
 
-v0.4.0 が書き込む可能性がある場所は次の範囲です。
+v0.5.0 が書き込む可能性がある場所は次の範囲です。
 
 ```text
 sdmc:/switch/TexNX/

@@ -3,6 +3,7 @@
 #include "texnx/Paths.hpp"
 #include "texnx/localization/Localization.hpp"
 #include "texnx/ui/Components.hpp"
+#include "texnx/ui/UiMetrics.hpp"
 
 #include <algorithm>
 #include <array>
@@ -26,11 +27,7 @@ namespace {
 
 constexpr std::size_t MaximumIconFileBytes = 2U * 1024U * 1024U;
 constexpr int MaximumIconDimension = 512;
-constexpr int TextureIconUploadDimension = 80;
-constexpr float TextureRowHeight = 112.0F;
-constexpr float TextureIconFrameSize = 84.0F;
-constexpr float TextureIconSize = 80.0F;
-constexpr float TextureListInset = 8.0F;
+constexpr int TextureIconUploadDimension = 84;
 
 struct TextureListEntry {
     std::string name;
@@ -153,29 +150,29 @@ public:
     TextureCell() : brls::Box(brls::Axis::ROW) {
         setAlignItems(brls::AlignItems::CENTER);
         setFocusable(true);
-        setHeight(TextureRowHeight);
-        setPadding(10, 16, 10, 16);
+        setHeight(metrics::TextureRowHeight);
+        setPadding(8, 14, 8, 14);
         setClipsToBounds(true);
-        setHighlightCornerRadius(8);
+        setHighlightPadding(2);
+        setHighlightCornerRadius(9);
         setLineBottom(1);
-        setLineColor(
-            brls::Application::getTheme()["brls/sidebar/separator"]);
+        setLineColor(brls::Application::getTheme()["texnx/divider"]);
 
         auto* iconFrame = new brls::Box(brls::Axis::ROW);
-        iconFrame->setWidth(TextureIconFrameSize);
-        iconFrame->setHeight(TextureIconFrameSize);
+        iconFrame->setWidth(metrics::TextureIconFrameSize);
+        iconFrame->setHeight(metrics::TextureIconFrameSize);
         iconFrame->setShrink(0);
         iconFrame->setAlignItems(brls::AlignItems::CENTER);
         iconFrame->setJustifyContent(brls::JustifyContent::CENTER);
-        iconFrame->setMarginRight(20);
+        iconFrame->setMarginRight(16);
         iconFrame->setCornerRadius(8);
         iconFrame->setClipsToBounds(true);
         iconFrame->setBackgroundColor(
-            brls::Application::getTheme()["texnx/background"]);
+            brls::Application::getTheme()["texnx/icon_background"]);
 
         icon_ = new brls::Image();
-        icon_->setWidth(TextureIconSize);
-        icon_->setHeight(TextureIconSize);
+        icon_->setWidth(metrics::TextureIconSize);
+        icon_->setHeight(metrics::TextureIconSize);
         icon_->setShrink(0);
         icon_->setCornerRadius(6);
         icon_->setClipsToBounds(true);
@@ -187,26 +184,39 @@ public:
         auto* textColumn = new brls::Box(brls::Axis::COLUMN);
         textColumn->setGrow(1);
         textColumn->setShrink(1);
+        textColumn->setMinWidth(0);
         textColumn->setJustifyContent(brls::JustifyContent::CENTER);
         textColumn->setClipsToBounds(true);
 
         name_ = new brls::Label();
         name_->setWidthPercentage(100);
-        name_->setHeight(38);
-        name_->setFontSize(27);
+        name_->setHeight(34);
+        name_->setFontSize(24);
         name_->setSingleLine(true);
         name_->setTextColor(brls::Application::getTheme()["texnx/text"]);
         textColumn->addView(name_);
 
         description_ = new brls::Label();
         description_->setWidthPercentage(100);
-        description_->setHeight(30);
-        description_->setFontSize(19);
+        description_->setHeight(26);
+        description_->setFontSize(18);
         description_->setSingleLine(true);
         description_->setTextColor(
             brls::Application::getTheme()["texnx/text_secondary"]);
         textColumn->addView(description_);
         addView(textColumn);
+
+        currentMarker_ = new brls::Label();
+        currentMarker_->setWidth(30);
+        currentMarker_->setHeight(40);
+        currentMarker_->setShrink(0);
+        currentMarker_->setMarginLeft(12);
+        currentMarker_->setFontSize(19);
+        currentMarker_->setSingleLine(true);
+        currentMarker_->setHorizontalAlign(brls::HorizontalAlign::CENTER);
+        currentMarker_->setTextColor(
+            brls::Application::getTheme()["texnx/text"]);
+        addView(currentMarker_);
 
         registerClickAction([this](brls::View*) {
             if (onClick_) {
@@ -219,13 +229,10 @@ public:
         inputTypeSubscription_ =
             brls::Application::getGlobalInputTypeChangeEvent()->subscribe(
                 [this](const brls::InputType type) {
-                    const bool focusedByController =
-                        type == brls::InputType::GAMEPAD && focused;
                     setLineColor(
-                        focusedByController
+                        type == brls::InputType::GAMEPAD && focused
                             ? brls::TRANSPARENT
-                            : brls::Application::getTheme()[
-                                  "brls/sidebar/separator"]);
+                            : brls::Application::getTheme()["texnx/divider"]);
                 });
     }
 
@@ -235,13 +242,15 @@ public:
     }
 
     void configure(const TextureListEntry& entry,
-                   std::function<void()> onClick) {
+                   std::function<void()> onClick,
+                   std::function<void()> onFocus) {
         name_->setText(entry.name);
         description_->setText(entry.description);
         description_->setVisibility(entry.description.empty()
                                         ? brls::Visibility::GONE
                                         : brls::Visibility::VISIBLE);
         onClick_ = std::move(onClick);
+        onFocus_ = std::move(onFocus);
 
         if (!loadPng(*icon_, entry.iconPath) &&
             !loadPng(*icon_, paths::DefaultTextureIcon)) {
@@ -249,12 +258,15 @@ public:
         }
     }
 
-    brls::Label* nameLabel() const noexcept {
-        return name_;
+    brls::Label* currentMarker() const noexcept {
+        return currentMarker_;
     }
 
     void onFocusGained() override {
         brls::Box::onFocusGained();
+        if (onFocus_) {
+            onFocus_();
+        }
         if (brls::Application::getInputType() == brls::InputType::GAMEPAD) {
             setLineColor(brls::TRANSPARENT);
         }
@@ -262,15 +274,16 @@ public:
 
     void onFocusLost() override {
         brls::Box::onFocusLost();
-        setLineColor(
-            brls::Application::getTheme()["brls/sidebar/separator"]);
+        setLineColor(brls::Application::getTheme()["texnx/divider"]);
     }
 
 private:
     brls::Image* icon_{nullptr};
     brls::Label* name_{nullptr};
     brls::Label* description_{nullptr};
+    brls::Label* currentMarker_{nullptr};
     std::function<void()> onClick_;
+    std::function<void()> onFocus_;
     brls::Event<brls::InputType>::Subscription inputTypeSubscription_;
 };
 
@@ -282,7 +295,7 @@ public:
 
     void onChildFocusGained(brls::View* directChild,
                             brls::View* focusedView) override {
-        // focus確定と同じ入力処理内で選択rowを完全表示位置へ移動する。
+        // focus確定と同じ入力処理内で選択行を完全表示位置へ移動する。
         brls::Box::onChildFocusGained(directChild, focusedView);
         childFocused = true;
         if (brls::Application::getInputType() == brls::InputType::GAMEPAD) {
@@ -303,15 +316,6 @@ public:
                        [](brls::View*) { return true; }, true, false);
     }
 };
-
-brls::Label* makeStateLabel(const std::string& text,
-                            const brls::HorizontalAlign alignment) {
-    auto* label = components::makeBody(text);
-    label->setHeight(36);
-    label->setFontSize(20);
-    label->setHorizontalAlign(alignment);
-    return label;
-}
 
 std::string replacePackPlaceholder(std::string text,
                                    const std::string& packName) {
@@ -400,50 +404,164 @@ TexturesView::TexturesView(localization::Localization& localization)
     : brls::Box(brls::Axis::COLUMN), localization_(localization),
       asyncBridge_(std::make_shared<AsyncBridge>()) {
     asyncBridge_->view = this;
-    components::configureScreen(*this);
-    components::registerBackAction(*this, localization_.text("common.back"));
+    components::configureContentPane(*this);
 
-    addView(components::makeTitle(localization_.text("textures.title")));
+    title_ = components::makeTitle({});
+    addView(title_);
 
-    panel_ = components::makePanel();
-    panel_->setGrow(1);
-    panel_->setClipsToBounds(true);
+    currentSectionLabel_ = components::makeSectionLabel({});
+    currentSectionLabel_->setMarginTop(2);
+    currentSectionLabel_->setMarginBottom(6);
+    addView(currentSectionLabel_);
 
-    currentLabel_ = makeStateLabel(
-        localization_.text("textures.current") + ": " +
-            localization_.text("textures.checking"),
-        brls::HorizontalAlign::LEFT);
-    panel_->addView(currentLabel_);
+    auto* currentCard = new brls::Box(brls::Axis::ROW);
+    currentCard->setWidthPercentage(100);
+    currentCard->setHeight(metrics::CurrentCardHeight);
+    currentCard->setShrink(0);
+    currentCard->setPadding(metrics::CardPadding);
+    currentCard->setAlignItems(brls::AlignItems::CENTER);
+    currentCard->setCornerRadius(metrics::CardRadius);
+    currentCard->setClipsToBounds(true);
+    currentCard->setBackgroundColor(
+        brls::Application::getTheme()["texnx/card"]);
 
-    statusLabel_ = makeStateLabel(localization_.text("textures.checking"),
-                                  brls::HorizontalAlign::CENTER);
-    panel_->addView(statusLabel_);
+    auto* iconFrame = new brls::Box(brls::Axis::ROW);
+    iconFrame->setWidth(metrics::CurrentIconFrameSize);
+    iconFrame->setHeight(metrics::CurrentIconFrameSize);
+    iconFrame->setShrink(0);
+    iconFrame->setAlignItems(brls::AlignItems::CENTER);
+    iconFrame->setJustifyContent(brls::JustifyContent::CENTER);
+    iconFrame->setMarginRight(20);
+    iconFrame->setCornerRadius(10);
+    iconFrame->setClipsToBounds(true);
+    iconFrame->setBackgroundColor(
+        brls::Application::getTheme()["texnx/icon_background"]);
+
+    currentIcon_ = new brls::Image();
+    currentIcon_->setWidth(metrics::CurrentIconSize);
+    currentIcon_->setHeight(metrics::CurrentIconSize);
+    currentIcon_->setShrink(0);
+    currentIcon_->setCornerRadius(8);
+    currentIcon_->setClipsToBounds(true);
+    currentIcon_->setScalingType(brls::ImageScalingType::FIT);
+    currentIcon_->setFreeTexture(true);
+    iconFrame->addView(currentIcon_);
+    currentCard->addView(iconFrame);
+
+    auto* currentText = new brls::Box(brls::Axis::COLUMN);
+    currentText->setGrow(1);
+    currentText->setShrink(1);
+    currentText->setMinWidth(0);
+    currentText->setJustifyContent(brls::JustifyContent::CENTER);
+    currentText->setClipsToBounds(true);
+
+    currentBadge_ = new brls::Label();
+    currentBadge_->setWidthPercentage(100);
+    currentBadge_->setHeight(22);
+    currentBadge_->setFontSize(15);
+    currentBadge_->setSingleLine(true);
+    currentBadge_->setTextColor(
+        brls::Application::getTheme()["texnx/text_secondary"]);
+    currentText->addView(currentBadge_);
+
+    currentName_ = new brls::Label();
+    currentName_->setWidthPercentage(100);
+    currentName_->setHeight(36);
+    currentName_->setFontSize(28);
+    currentName_->setSingleLine(true);
+    currentName_->setTextColor(
+        brls::Application::getTheme()["texnx/text"]);
+    currentText->addView(currentName_);
+
+    currentDescription_ = new brls::Label();
+    currentDescription_->setWidthPercentage(100);
+    currentDescription_->setHeight(27);
+    currentDescription_->setFontSize(18);
+    currentDescription_->setSingleLine(true);
+    currentDescription_->setTextColor(
+        brls::Application::getTheme()["texnx/text_secondary"]);
+    currentText->addView(currentDescription_);
+    currentCard->addView(currentText);
+    addView(currentCard);
+
+    auto* divider = components::makeDivider();
+    divider->setMarginTop(14);
+    divider->setMarginBottom(10);
+    addView(divider);
+
+    availableLabel_ = components::makeSectionLabel({});
+    availableLabel_->setMarginBottom(5);
+    addView(availableLabel_);
+
+    statusLabel_ = components::makeBody({});
+    statusLabel_->setHeight(28);
+    statusLabel_->setFontSize(17);
+    statusLabel_->setMarginBottom(4);
+    addView(statusLabel_);
 
     listHost_ = new brls::Box(brls::Axis::COLUMN);
     listHost_->setGrow(1);
     listHost_->setShrink(1);
     listHost_->setMinHeight(0);
     listHost_->setWidthPercentage(100);
+    listHost_->setCornerRadius(metrics::CardRadius);
     listHost_->setClipsToBounds(true);
-    panel_->addView(listHost_);
-    addView(panel_);
+    listHost_->setBackgroundColor(
+        brls::Application::getTheme()["texnx/card"]);
+    addView(listHost_);
 
-    auto* backButton =
-        components::makeBackButton(localization_.text("common.back"));
-    addView(backButton);
+    registerAction({}, brls::BUTTON_B,
+                   [this](brls::View*) {
+                       if (!applying_ && returnToSidebar_) {
+                           returnToSidebar_();
+                       }
+                       return true;
+                   },
+                   false, false, brls::SOUND_BACK);
+    registerAction({}, brls::BUTTON_LEFT,
+                   [this](brls::View*) {
+                       if (!applying_ && returnToSidebar_) {
+                           returnToSidebar_();
+                       }
+                       return true;
+                   },
+                   true, false, brls::SOUND_FOCUS_CHANGE);
 
-    // fingerprint走査中もBackを即時操作できる。
-    setDefaultFocusedIndex(2);
-    startInitialLoad();
+    refreshText();
+    showCheckingUi();
 }
 
 TexturesView::~TexturesView() {
     asyncBridge_->view = nullptr;
 }
 
-void TexturesView::startInitialLoad() {
+void TexturesView::onTabActivated() {
+    active_ = true;
+    requestRefresh();
+}
+
+void TexturesView::onTabDeactivated() {
+    active_ = false;
+}
+
+void TexturesView::requestRefresh() {
+    if (applying_) {
+        refreshPending_ = true;
+        return;
+    }
+    if (refreshInProgress_) {
+        refreshPending_ = true;
+        return;
+    }
+
+    refreshInProgress_ = true;
+    dataReady_ = false;
+    const std::size_t generation = ++refreshGeneration_;
+    showCheckingUi();
+    updateListActionAvailability();
+
     const auto bridge = asyncBridge_;
-    brls::async([bridge] {
+    brls::async([bridge, generation] {
         auto scanResult = textures::TextureRepository::scan();
         auto currentResult = textures::TextureRepository::detectCurrentState(
             scanResult.state == textures::TextureScanState::Ready
@@ -457,22 +575,27 @@ void TexturesView::startInitialLoad() {
             currentResult.nativeResult = scanResult.nativeResult;
             currentResult.errorPath = paths::TextureDirectory;
         }
-        brls::sync([bridge, scanResult = std::move(scanResult),
+        brls::sync([bridge, generation, scanResult = std::move(scanResult),
                     currentResult = std::move(currentResult)]() mutable {
             if (bridge->view != nullptr) {
-                bridge->view->finishInitialLoad(std::move(scanResult),
-                                                std::move(currentResult));
+                bridge->view->finishRefresh(generation, std::move(scanResult),
+                                            std::move(currentResult));
             }
         });
     });
 }
 
-void TexturesView::finishInitialLoad(
-    textures::TextureScanResult scanResult,
+void TexturesView::finishRefresh(
+    const std::size_t generation, textures::TextureScanResult scanResult,
     textures::CurrentTextureResult currentResult) {
+    if (generation != refreshGeneration_) {
+        return;
+    }
+
     scanResult_ = std::move(scanResult);
     currentResult_ = std::move(currentResult);
-    initialLoadFinished_ = true;
+    refreshInProgress_ = false;
+    dataReady_ = true;
 
     if (scanResult_.state == textures::TextureScanState::Error) {
         brls::Logger::warning(
@@ -490,7 +613,8 @@ void TexturesView::finishInitialLoad(
     buildTextureList();
     updateCurrentUi();
 
-    if (currentResult_.state == textures::CurrentTextureState::Error) {
+    if (active_ &&
+        currentResult_.state == textures::CurrentTextureState::Error) {
         brls::Logger::error(
             "Current texture fingerprint failed (errno {}, libnx Result {:#x}, path '{}')",
             currentResult_.posixError, currentResult_.nativeResult,
@@ -500,20 +624,32 @@ void TexturesView::finishInitialLoad(
         dialog->addButton(localization_.text("common.ok"), [] {});
         dialog->open();
     }
+
+    if (refreshPending_) {
+        refreshPending_ = false;
+        requestRefresh();
+    }
 }
 
 void TexturesView::buildTextureList() {
+    const auto* focused = brls::Application::getCurrentFocus();
+    const bool hadListFocus =
+        std::find(entryCells_.begin(), entryCells_.end(), focused) !=
+        entryCells_.end();
+
     listHost_->clearViews();
-    entryNameLabels_.clear();
-    entryBaseNames_.clear();
+    entryCells_.clear();
+    entryCurrentMarkers_.clear();
 
     std::vector<TextureListEntry> entries;
     entries.reserve(scanResult_.packs.size() + 1U);
     entries.push_back({localization_.text("textures.default"),
                        localization_.text("textures.default_description"),
                        paths::DefaultTextureIcon});
-    for (const auto& pack : scanResult_.packs) {
-        entries.push_back({pack.name, pack.description, pack.iconPath});
+    if (scanResult_.state == textures::TextureScanState::Ready) {
+        for (const auto& pack : scanResult_.packs) {
+            entries.push_back({pack.name, pack.description, pack.iconPath});
+        }
     }
 
     auto* list = new TextureScrollingFrame();
@@ -524,40 +660,57 @@ void TexturesView::buildTextureList() {
     list->setClipsToBounds(true);
 
     auto* content = new brls::Box(brls::Axis::COLUMN);
-    content->setPadding(TextureListInset);
+    content->setPadding(metrics::TextureListInset);
     content->setDefaultFocusedIndex(0);
 
-    brls::View* firstCell = nullptr;
     const auto bridge = asyncBridge_;
     for (std::size_t index = 0; index < entries.size(); ++index) {
         auto* cell = new TextureCell();
         cell->setWidthPercentage(100);
-        cell->setLineTop(index == 0 ? 1 : 0);
-        cell->configure(entries[index], [bridge, index] {
-            if (bridge->view != nullptr) {
-                bridge->view->showConfirmation(index);
-            }
-        });
+        cell->configure(
+            entries[index],
+            [bridge, index] {
+                if (bridge->view != nullptr) {
+                    bridge->view->showConfirmation(index);
+                }
+            },
+            [bridge, index] {
+                if (bridge->view != nullptr) {
+                    bridge->view->lastFocusedIndex_ = index;
+                }
+            });
+        cell->updateActionHint(brls::BUTTON_A,
+                               localization_.text("hints.apply"));
         content->addView(cell);
-        if (firstCell == nullptr) {
-            firstCell = cell;
-        }
-        entryNameLabels_.push_back(cell->nameLabel());
-        entryBaseNames_.push_back(entries[index].name);
+        entryCells_.push_back(cell);
+        entryCurrentMarkers_.push_back(cell->currentMarker());
     }
+
+    for (std::size_t index = 0; index < entryCells_.size(); ++index) {
+        entryCells_[index]->setCustomNavigationRoute(
+            brls::FocusDirection::UP,
+            entryCells_[index == 0 ? 0 : index - 1U]);
+        entryCells_[index]->setCustomNavigationRoute(
+            brls::FocusDirection::DOWN,
+            entryCells_[index + 1U < entryCells_.size() ? index + 1U
+                                                        : index]);
+    }
+    entryCells_.back()->setLineBottom(0);
 
     list->setContentView(content);
     listHost_->addView(list);
     listHost_->setDefaultFocusedIndex(0);
-    panel_->setDefaultFocusedIndex(2);
-    setDefaultFocusedIndex(1);
-    if (firstCell != nullptr) {
-        brls::Application::giveFocus(firstCell);
+    updateListActionAvailability();
+
+    if (hadListFocus && !entryCells_.empty()) {
+        lastFocusedIndex_ =
+            std::min(lastFocusedIndex_, entryCells_.size() - 1U);
+        brls::Application::giveFocus(entryCells_[lastFocusedIndex_]);
     }
 }
 
 void TexturesView::showConfirmation(const std::size_t entryIndex) {
-    if (!initialLoadFinished_ || applying_ ||
+    if (!dataReady_ || applying_ ||
         entryIndex > scanResult_.packs.size()) {
         return;
     }
@@ -589,10 +742,11 @@ void TexturesView::showConfirmation(const std::size_t entryIndex) {
 }
 
 void TexturesView::beginOperation(const std::size_t entryIndex) {
-    if (applying_ || entryIndex > scanResult_.packs.size()) {
+    if (applying_ || !dataReady_ ||
+        entryIndex > scanResult_.packs.size()) {
         return;
     }
-    applying_ = true;
+    setApplying(true);
 
     const bool restoreDefault = entryIndex == 0;
     const std::string operationName =
@@ -617,11 +771,13 @@ void TexturesView::beginOperation(const std::size_t entryIndex) {
         localization_.text("textures.progress_checking"));
     progressStageLabel_->setHeight(42);
     progressStageLabel_->setMarginTop(14);
+    progressStageLabel_->setHorizontalAlign(brls::HorizontalAlign::CENTER);
     content->addView(progressStageLabel_);
 
     progressPercentLabel_ = components::makeBody("0%");
     progressPercentLabel_->setHeight(46);
     progressPercentLabel_->setFontSize(28);
+    progressPercentLabel_->setHorizontalAlign(brls::HorizontalAlign::CENTER);
     content->addView(progressPercentLabel_);
 
     auto* progressTrack = new brls::Box(brls::Axis::ROW);
@@ -630,7 +786,7 @@ void TexturesView::beginOperation(const std::size_t entryIndex) {
     progressTrack->setCornerRadius(7);
     progressTrack->setClipsToBounds(true);
     progressTrack->setBackgroundColor(
-        brls::Application::getTheme()["brls/button/default_enabled_background"]);
+        brls::Application::getTheme()["texnx/progress_track"]);
 
     progressFill_ =
         new brls::Rectangle(brls::Application::getTheme()["texnx/text"]);
@@ -649,23 +805,21 @@ void TexturesView::beginOperation(const std::size_t entryIndex) {
         restoreDefault ? textures::TexturePack{}
                        : scanResult_.packs[entryIndex - 1U];
     brls::async([bridge, packs, selectedPack, restoreDefault] {
-        const auto progressCallback = [bridge](
-                                          const textures::TextureInstallProgress&
-                                              progress) {
-            brls::sync([bridge, progress] {
-                if (bridge->view != nullptr) {
-                    bridge->view->updateProgress(progress);
-                }
-            });
-        };
+        const auto progressCallback =
+            [bridge](const textures::TextureInstallProgress& progress) {
+                brls::sync([bridge, progress] {
+                    if (bridge->view != nullptr) {
+                        bridge->view->updateProgress(progress);
+                    }
+                });
+            };
 
         auto result = restoreDefault
                           ? textures::TextureInstaller::restoreDefault(
                                 progressCallback)
                           : textures::TextureInstaller::apply(
                                 selectedPack, progressCallback);
-        auto current =
-            textures::TextureRepository::detectCurrentState(packs);
+        auto current = textures::TextureRepository::detectCurrentState(packs);
         brls::sync([bridge, result = std::move(result),
                     current = std::move(current)]() mutable {
             if (bridge->view != nullptr) {
@@ -712,13 +866,13 @@ void TexturesView::finishOperation(
 
     const auto bridge = asyncBridge_;
     if (dialog == nullptr) {
-        applying_ = false;
+        setApplying(false);
         showOperationResult(result, currentResult_);
         return;
     }
     dialog->close([bridge, result = std::move(result)] {
         if (bridge->view != nullptr) {
-            bridge->view->applying_ = false;
+            bridge->view->setApplying(false);
             bridge->view->showOperationResult(result,
                                               bridge->view->currentResult_);
         }
@@ -754,37 +908,141 @@ void TexturesView::showOperationResult(
     dialog->open();
 }
 
+void TexturesView::showCheckingUi() {
+    currentName_->setText(localization_.text("textures.checking"));
+    currentDescription_->setText(
+        localization_.text("textures.checking_description"));
+    if (currentIconPath_ != paths::DefaultTextureIcon) {
+        if (!loadPng(*currentIcon_, paths::DefaultTextureIcon)) {
+            brls::Logger::error("Unable to load built-in current texture icon");
+        }
+        currentIconPath_ = paths::DefaultTextureIcon;
+    }
+    for (auto* marker : entryCurrentMarkers_) {
+        marker->setText({});
+    }
+}
+
 void TexturesView::updateCurrentUi() {
-    std::string currentText;
+    std::string name;
+    std::string description;
+    std::string iconPath = paths::DefaultTextureIcon;
     std::size_t selectedEntry = std::numeric_limits<std::size_t>::max();
+
     switch (currentResult_.state) {
         case textures::CurrentTextureState::Default:
-            currentText = localization_.text("textures.default");
+            name = localization_.text("textures.default");
+            description =
+                localization_.text("textures.default_description");
             selectedEntry = 0;
             break;
         case textures::CurrentTextureState::KnownPack:
             if (currentResult_.matchedPackIndex < scanResult_.packs.size()) {
-                currentText =
-                    scanResult_.packs[currentResult_.matchedPackIndex].name;
+                const auto& pack =
+                    scanResult_.packs[currentResult_.matchedPackIndex];
+                name = pack.name;
+                description = pack.description;
+                iconPath = pack.iconPath;
                 selectedEntry = currentResult_.matchedPackIndex + 1U;
             } else {
-                currentText = localization_.text("textures.current_error_short");
+                name = localization_.text("textures.unable_identify");
+                description =
+                    localization_.text("textures.current_error_description");
             }
             break;
         case textures::CurrentTextureState::ExternalOrUnknown:
-            currentText = localization_.text("textures.external_unknown");
+            name = localization_.text("textures.external_unknown");
+            description =
+                localization_.text("textures.external_description");
             break;
         case textures::CurrentTextureState::Error:
-            currentText = localization_.text("textures.current_error_short");
+            name = localization_.text("textures.unable_identify");
+            description =
+                localization_.text("textures.current_error_description");
             break;
     }
 
-    currentLabel_->setText(localization_.text("textures.current") + ": " +
-                           currentText);
-    for (std::size_t index = 0; index < entryNameLabels_.size(); ++index) {
-        entryNameLabels_[index]->setText(
-            (index == selectedEntry ? "✓ " : "") + entryBaseNames_[index]);
+    currentName_->setText(name);
+    currentDescription_->setText(description);
+    if (currentIconPath_ != iconPath) {
+        if (!loadPng(*currentIcon_, iconPath) &&
+            !loadPng(*currentIcon_, paths::DefaultTextureIcon)) {
+            brls::Logger::error("Unable to load current texture icon");
+        }
+        currentIconPath_ = iconPath;
     }
+
+    for (std::size_t index = 0; index < entryCurrentMarkers_.size(); ++index) {
+        entryCurrentMarkers_[index]->setText(index == selectedEntry ? "●" : "");
+    }
+}
+
+void TexturesView::updateListActionAvailability() {
+    const bool available = dataReady_ && !applying_;
+    for (auto* cell : entryCells_) {
+        cell->setActionAvailable(brls::BUTTON_A, available);
+    }
+}
+
+void TexturesView::setApplying(const bool applying) {
+    applying_ = applying;
+    updateListActionAvailability();
+    if (applyStateChanged_) {
+        applyStateChanged_(applying);
+    }
+    if (!applying_ && refreshPending_ && !refreshInProgress_) {
+        refreshPending_ = false;
+        requestRefresh();
+    }
+}
+
+void TexturesView::refreshText() {
+    title_->setText(localization_.text("textures.title"));
+    currentSectionLabel_->setText(
+        localization_.text("textures.current_section"));
+    currentBadge_->setText(localization_.text("textures.current_badge"));
+    availableLabel_->setText(
+        localization_.text("textures.available_section"));
+    updateActionHint(brls::BUTTON_B, localization_.text("hints.tabs"));
+
+    if (!dataReady_) {
+        statusLabel_->setText(localization_.text("textures.checking"));
+        statusLabel_->setVisibility(brls::Visibility::VISIBLE);
+    } else if (scanResult_.state == textures::TextureScanState::Error) {
+        statusLabel_->setText(localization_.text("textures.directory_error"));
+        statusLabel_->setVisibility(brls::Visibility::VISIBLE);
+    } else if (scanResult_.packs.empty()) {
+        statusLabel_->setText(localization_.text("textures.empty"));
+        statusLabel_->setVisibility(brls::Visibility::VISIBLE);
+    } else {
+        statusLabel_->setVisibility(brls::Visibility::GONE);
+    }
+
+    buildTextureList();
+    if (dataReady_) {
+        updateCurrentUi();
+    } else {
+        showCheckingUi();
+    }
+}
+
+void TexturesView::focusContent() {
+    if (entryCells_.empty()) {
+        return;
+    }
+    lastFocusedIndex_ =
+        std::min(lastFocusedIndex_, entryCells_.size() - 1U);
+    brls::Application::giveFocus(entryCells_[lastFocusedIndex_]);
+}
+
+void TexturesView::setReturnToSidebarCallback(
+    std::function<void()> callback) {
+    returnToSidebar_ = std::move(callback);
+}
+
+void TexturesView::setApplyStateCallback(
+    std::function<void(bool)> callback) {
+    applyStateChanged_ = std::move(callback);
 }
 
 } // namespace texnx::ui
