@@ -1,64 +1,141 @@
-# TexNX
+[English](README.md) | [日本語](README_JA.md)
 
-TexNX は、Atmosphere CFW を導入した Nintendo Switch 上で動作する、Minecraft: Nintendo Switch Edition 向けの非公式 Homebrew アプリケーションです。対象 Title ID は `01006BD001E06000` です。
+<p align="center">
+  <img src="assets/App/App.png" width="220" alt="TexNX application icon">
+</p>
 
-現在のバージョンは `0.5.0` です。Borealis による controller／touch 対応 GUI、英語／日本語表示、言語設定の保存、SDカード上のテクスチャパック一覧表示とMinecraft LayeredFSへの適用を備えています。
+<h1 align="center">TexNX</h1>
 
-## v0.5.0 の機能
+<p align="center">
+  A focused texture pack switcher for Minecraft: Nintendo Switch Edition.<br>
+  <strong>Latest stable release: v1.0.0</strong>
+</p>
 
-- `Textures`、`Settings`、`About` を左Sidebarから切り替える単一Main Activity
-- 選択中tabを維持するSidebarと、共通のPage Header／Content／Button Hints
-- Sidebarのfocus移動と同時にcontentを切り替える、入力をblockしない短いfade
-- Handheld／Docked の表示サイズに追従するBorealis／Yoga flex layout
-- controller と touch による標準的な UI 操作
-- Sidebarでは`UP`／`DOWN`でtabを選択し、`A`または`RIGHT`でcontentへ移動
-- Contentでは`LEFT`または`B`でSidebarへ戻り、`PLUS`で終了
-- 適用処理中だけは不完全なCommonを残さないため通常操作と終了入力を無効化
-- 固定された black／dark gray／gray／white の配色
-- `System`（既定）、`English`、`日本語` の言語選択
-- `sdmc:/switch/TexNX/config.json` への言語設定だけの保存
-- config が存在しない、空、壊れている、未知の値を含む場合は `System` へ安全に fallback
-- 日本語表示には Borealis の libnx backend が読み込む Switch shared system font を使用
-- `sdmc:/switch/TexNX/Textures/<Pack>/Common` 形式のテクスチャパックをTextures tabが有効になるたびに一覧化
-- directory名、`Common/res/description.txt` の先頭行、`Common/res/gui/pack_icon.png` を表示
-- iconがない、壊れている、対応外の場合はNRO内蔵のdefault iconへfallback
-- 常に先頭へ`Default` entryを表示し、packまたはDefaultの選択時に安全側の確認Dialogを表示
-- 適用元Commonを全走査してから既存Minecraft Commonを完全削除し、128 KiB bufferで元packを変更せず再帰copy
-- file byte数に基づく進捗Dialogと、copy後のSHA-256 fingerprint検証
-- `Default`の選択ではLayeredFS Commonを完全削除し、ゲーム内蔵テクスチャへ戻す
-- 実際のMinecraft Commonと各packを照合し、Current Texture cardと選択中の印を更新
-- Known packと一致しないCommonは`External / Unknown`と表示
-- TexNX外でCommonを手動配置した場合も、内容がKnown packと完全一致すればそのpackとして検出
+## Overview
 
-fingerprintにはCommonをrootとした実際のrelative path、directory、file size、file contentを含め、bytewise sortで列挙順に依存しない結果を作ります。内容が同一のpackが複数ある場合は一覧sort順で最初のpackを表示します。configはCurrent判定に使用しません。
+TexNX is an unofficial Nintendo Switch homebrew application for listing and switching locally installed texture packs for **Minecraft: Nintendo Switch Edition**. It is designed for Atmosphère LayeredFS and targets title ID `01006BD001E06000`.
 
-TexNXは現在のCommonの永続backup、backupからのrestore、rollback archiveを作成しません。`Default`操作は保存済みbackupの復元ではなく、LayeredFS Commonを削除するだけです。theme切り替え機能もありません。
+The interface is intentionally focused: select a texture pack, apply it safely, or return to the game's built-in textures. TexNX does not download packs and does not include game data.
 
-## 開発環境
+## Features
 
-必要なもの:
+- Sidebar interface with `Textures`, `Settings`, and `About` pages
+- Controller and touch input through Borealis
+- English and Japanese interface languages, with `System` as the default
+- Texture pack names, optional descriptions, and optional pack icons
+- Embedded fallback icon for packs with a missing or unsupported icon
+- Confirmation dialog and non-blocking progress display during apply operations
+- Streaming copy and SHA-256 verification without loading whole packs into memory
+- Current texture detection from the actual LayeredFS `Common` directory
+- Safe return to the game's built-in `Default` textures
+- `PLUS` to exit during normal operation
 
-- devkitPro
-- devkitA64
-- libnx 4.10.0 以上
-- deko3d と uam
-- switch-glm
-- switch-cmake
-- CMake 3.20 以上
+## Requirements
 
-GUI dependency の [XITRIX/borealis](https://github.com/XITRIX/borealis) は `external/borealis` の Git submodule として revision を固定しています。Borealis が必要とするため TexNX は C++20 を使用します。Switch backend は deko3d を利用し、未使用の GLFW／SDL submodule は初期化しません。
+| Item | Requirement |
+| --- | --- |
+| Console | Nintendo Switch capable of running homebrew |
+| CFW | Atmosphère with LayeredFS support |
+| Game | Minecraft: Nintendo Switch Edition |
+| Title ID | `01006BD001E06000` |
+| Languages | English / Japanese |
 
-clone 後は submodule を初期化してください。
+TexNX is not intended for Minecraft Bedrock Edition or other title IDs.
 
-```sh
-git submodule update --init external/borealis
+## Installation
+
+Download `TexNX.zip` from the [latest GitHub Release](https://github.com/IGNSeed/TexNX/releases/latest) and extract it to the root of your SD card. The archive is arranged as follows:
+
+```text
+switch/
+├── TexNX.nro
+└── TexNX/
+    └── Textures/
 ```
 
-Switch 向け build には必ず devkitA64 toolchain を使用してください。MSVC、通常の Windows MinGW、x86/x64 compiler は対象外です。
+After extraction, these paths will exist:
 
-Windows では devkitPro MSYS2 shell から次のように build できます。
+```text
+sdmc:/switch/TexNX.nro
+sdmc:/switch/TexNX/Textures/
+```
+
+Alternatively, download `TexNX.nro`, place it at `sdmc:/switch/TexNX.nro`, and create `sdmc:/switch/TexNX/Textures/` for your packs.
+
+## Texture pack structure
+
+Each pack is a directory directly below `Textures` and must contain a `Common` directory:
+
+```text
+sdmc:/switch/TexNX/Textures/<Pack>/Common/
+├── res/
+│   ├── gui/
+│   │   └── pack_icon.png    # Optional
+│   └── description.txt          # Optional; first UTF-8 line
+└── ...                               # Texture pack files
+```
+
+The `<Pack>` directory name is used as the display name. Packs without `Common` are not listed. If `pack_icon.png` is missing, damaged, or unsupported, TexNX displays its embedded default texture icon.
+
+## How to use
+
+1. Close Minecraft before modifying its LayeredFS files. TexNX does not check whether the game is running.
+2. Open TexNX from Homebrew Menu.
+3. Choose `Textures` in the Sidebar with `UP` / `DOWN`.
+4. Press `A` or `RIGHT` to enter the texture list.
+5. Select a pack and press `A`, then confirm the operation. Touch selection is also supported.
+6. Wait for the progress dialog to complete. Apply operations cannot be cancelled midway.
+7. Select `Default` to remove the LayeredFS `Common` directory and return to the textures built into the game.
+
+Press `LEFT` or `B` in Content to return to the Sidebar. Press `PLUS` to exit during normal operation. Normal input and exit actions are blocked while an apply operation is writing or verifying files.
+
+## Current Texture states
+
+The Current Texture card is derived from the actual Minecraft LayeredFS files rather than a saved selection:
+
+| State | Meaning |
+| --- | --- |
+| `Default` | The LayeredFS `Common` directory does not exist. The game uses its built-in content. |
+| Known pack | `Common` exactly matches one listed pack, including paths, directories, sizes, and file contents. |
+| `External / Unknown` | `Common` exists, but no listed pack has the same complete SHA-256 fingerprint. |
+| Error | TexNX could not inspect the required filesystem state. |
+
+Manually installed `Common` content is recognized as a known pack only when it fully matches one of the currently listed packs.
+
+## Apply behavior and safety
+
+TexNX applies a pack in this order:
+
+1. Fully enumerate and read the source `Common` as a preflight check.
+2. Remove the existing Minecraft LayeredFS `Common` completely.
+3. Create a new destination tree.
+4. Stream the source files into the destination using a reusable 128 KiB buffer.
+5. Compare the preflight, copy-time source, and destination read-back fingerprints.
+6. Update the Current Texture display only after verification succeeds.
+
+The source at `sdmc:/switch/TexNX/Textures/<Pack>/Common` is read-only from TexNX's perspective: it is copied, never moved, renamed, deleted, or modified. If preflight fails, the existing destination is left untouched. If copying or verification fails after removal starts, TexNX attempts to delete the incomplete destination.
+
+TexNX writes only within these locations:
+
+```text
+sdmc:/switch/TexNX/
+sdmc:/switch/TexNX/config.json
+sdmc:/switch/TexNX/config.json.tmp
+sdmc:/switch/TexNX/Textures/
+sdmc:/atmosphere/contents/01006BD001E06000/romfs/Common/
+```
+
+TexNX does **not** create persistent backups, rollback archives, or backup restore points. Returning to `Default` means deleting the LayeredFS `Common`; it is not a backup restore. TexNX also has no theme switcher.
+
+## Build from source
+
+The project uses CMake, devkitPro, devkitA64, libnx, deko3d, uam, switch-glm, and a pinned Borealis submodule. CMake 3.20 or newer and Ninja are recommended. Borealis requires C++20.
 
 ```sh
+git clone https://github.com/IGNSeed/TexNX.git
+cd TexNX
+git submodule update --init external/borealis
+
 export DEVKITPRO=/opt/devkitpro
 export DEVKITA64="$DEVKITPRO/devkitA64"
 
@@ -67,54 +144,29 @@ cmake -S . -B build -G Ninja \
 cmake --build build --parallel
 ```
 
-生成物は `build/TexNX.nro` です。必要な shader、font、i18n resource、default texture iconはNRO内のRomFSに収録されるため、実機への配布物はこのNRO 1ファイルだけです。NACPのapp nameは`TexNX`、versionはCMake project versionと同じ`0.5.0`、authorは`IGNSeed`です。専用の権利クリアなapplication artworkがないためcustom application iconは同梱していません。
+Use a devkitPro MSYS2 shell on Windows, or another environment with the Switch toolchain installed. MSVC and ordinary desktop MinGW compilers are not supported. The NRO is generated at `build/TexNX.nro`.
 
-## 配置と操作
+To create the same SD-card archive layout used by the official release:
 
-生成した `TexNX.nro` は次の推奨場所へ配置します。Homebrew Menu が走査する `sdmc:/switch/` 直下へ配置しても起動できます。
-
-```text
-sdmc:/switch/TexNX/TexNX.nro
+```sh
+cmake --build build --target TexNXRelease
 ```
 
-Homebrew Menu から起動し、controller または touch で操作します。初回の言語は Switch 本体設定を参照し、日本語と英語以外の本体言語は英語表示になります。言語は Settings から起動中に即時変更でき、次回起動用として `config.json` に保存されます。
+This creates `build/release/TexNX.zip`. The app icon, shaders, localization resources, Material Icons font, and default texture fallback icon are embedded in the NRO. Build artifacts are not tracked by Git.
 
-テクスチャパックは次の構造で配置します。`Common`がないdirectoryは一覧に表示されません。
+## Release contents
 
-```text
-sdmc:/switch/TexNX/Textures/<Pack>/Common/
-├── res/gui/pack_icon.png       # 任意
-└── res/description.txt         # 任意、先頭行のみ使用
-```
+The v1.0.0 GitHub Release contains exactly two downloadable assets:
 
-Minecraft LayeredFSのCommonが存在しない状態はゲーム内蔵の`Default`として正常に扱い、起動時Dialogは表示しません。存在確認そのものがI/O errorになった場合だけDialogで通知し、TexNXは終了せず利用できます。
+- `TexNX.nro` — standalone homebrew application
+- `TexNX.zip` — ready-to-extract SD card package
 
-Textures画面でpackを選択すると、確認後に次の順序で適用します。
+Neither asset contains Minecraft files, Nintendo files, texture packs, Atmosphère binaries, or keys.
 
-1. 適用元packのCommonを完全に事前検証
-2. 既存Minecraft Commonを完全削除
-3. 新しいCommon directoryを作成
-4. 選択packのCommonをstreaming copy
-5. sourceとdestinationのfingerprint一致を検証
-6. Current Texture cardと一覧の選択中表示を実際のCommonから再判定
+## License
 
-事前検証に失敗した場合は既存Commonを変更しません。削除に失敗した場合は新しいcopyを開始しません。削除開始後のcopyや検証に失敗した場合は、不完全なdestination Commonをbest-effortで削除し、ゲーム内蔵Defaultへfallbackできる状態を目指します。適用開始後の途中cancelはありません。
+TexNX source code is available under the [MIT License](LICENSE). The pinned [XITRIX/borealis](https://github.com/XITRIX/borealis) dependency is provided under the Apache License 2.0. Its required Material Icons font and license are embedded as runtime resources.
 
-## Runtime のファイル操作
+## Disclaimer
 
-v0.5.0 が書き込む可能性がある場所は次の範囲です。
-
-```text
-sdmc:/switch/TexNX/
-sdmc:/switch/TexNX/config.json
-sdmc:/switch/TexNX/Textures/
-sdmc:/atmosphere/contents/01006BD001E06000/romfs/Common/
-```
-
-言語設定は安全な置換のため同じdirectoryに一時的な`config.json.tmp`を作成し、完了後に置き換えます。Texture適用時は上記Minecraft Commonだけを削除・再作成します。`sdmc:/switch/TexNX/Textures/<Pack>/Common`は常に読み取り専用で、move、rename、delete、modifyしません。Minecraftの起動状態確認や、それに伴うservice dependencyは実装していません。
-
-## Dependency とライセンス
-
-TexNX のソースコードは [MIT License](LICENSE) で提供されます。Borealis は Apache License 2.0 で提供され、revision は Git submodule pointer により固定されます。Borealis の Material Icons font とその license は GUI の実行に必要な resource として NRO の RomFS に収録されます。Nintendo／Minecraft から抽出した font や asset は使用・収録しません。
-
-TexNX は Nintendo、Mojang Studios、Microsoft の非公式プロジェクトであり、これらの企業による承認・提携・支援を受けていません。リポジトリにはゲームから抽出したデータ、Minecraft/Nintendo の assets、ROM、keys、Atmosphere の配布バイナリを含めません。
+TexNX is an unofficial community project. It is not affiliated with, endorsed by, sponsored by, or supported by Nintendo, Mojang Studios, or Microsoft. This repository does not contain game data, extracted game assets, ROMs, keys, or official Atmosphère distribution binaries.

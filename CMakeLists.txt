@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(TexNX VERSION 0.5.0 LANGUAGES C CXX)
+project(TexNX VERSION 1.0.0 LANGUAGES C CXX)
 
 if(NOT NINTENDO_SWITCH)
     message(FATAL_ERROR
@@ -90,6 +90,20 @@ if(NOT EXISTS "${TEXNX_DEFAULT_ICON_SOURCE}")
         "TexNX default texture icon is missing: assets/default/_icon.png")
 endif()
 
+# READMEは元PNGを使用し、NROにはSwitch Homebrew向けJPEGを埋め込む。
+set(TEXNX_APP_ICON_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/App/App.png")
+set(TEXNX_NRO_ICON
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/App/App.jpg")
+if(NOT EXISTS "${TEXNX_APP_ICON_SOURCE}")
+    message(FATAL_ERROR
+        "TexNX application icon source is missing: assets/App/App.png")
+endif()
+if(NOT EXISTS "${TEXNX_NRO_ICON}")
+    message(FATAL_ERROR
+        "TexNX NRO icon is missing: assets/App/App.jpg")
+endif()
+
 file(MAKE_DIRECTORY
     "${TEXNX_ROMFS_DIR}/assets/default"
     "${TEXNX_ROMFS_DIR}/i18n/en-US"
@@ -140,7 +154,19 @@ nx_generate_nacp(TexNX.nacp
 
 nx_create_nro(TexNX
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/TexNX.nro"
+    ICON "${TEXNX_NRO_ICON}"
     NACP "${CMAKE_CURRENT_BINARY_DIR}/TexNX.nacp"
     ROMFS "${TEXNX_ROMFS_DIR}"
-    NOICON
+)
+
+set(TEXNX_RELEASE_DIR "${CMAKE_CURRENT_BINARY_DIR}/release")
+add_custom_target(TexNXRelease
+    COMMAND "${CMAKE_COMMAND}"
+        "-DTEXNX_NRO=${CMAKE_CURRENT_BINARY_DIR}/TexNX.nro"
+        "-DTEXNX_RELEASE_DIR=${TEXNX_RELEASE_DIR}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/PackageRelease.cmake"
+    DEPENDS TexNX_nro
+    BYPRODUCTS "${TEXNX_RELEASE_DIR}/TexNX.zip"
+    COMMENT "Packaging TexNX release archive"
+    VERBATIM
 )

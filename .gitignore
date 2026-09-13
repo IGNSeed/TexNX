@@ -16,12 +16,14 @@ compile_commands.json
 *.nso
 *.nsp
 *.npdm
+*.zip
 
 # Compiler outputs
 *.o
 *.obj
 *.a
 *.d
+*.su
 
 # Editors and local tooling
 .vs/
