@@ -65,7 +65,7 @@ private:
     brls::Dialog* progressDialog_{nullptr};
     brls::Label* progressStageLabel_{nullptr};
     brls::Label* progressPercentLabel_{nullptr};
-    brls::Rectangle* progressFill_{nullptr};
+    brls::Box* progressFill_{nullptr};
     std::vector<brls::View*> entryCells_;
     std::vector<brls::Label*> entryCurrentMarkers_;
     std::string currentIconPath_;

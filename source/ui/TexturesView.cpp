@@ -754,48 +754,84 @@ void TexturesView::beginOperation(const std::size_t entryIndex) {
                        : scanResult_.packs[entryIndex - 1U].name;
 
     auto* content = new BlockingProgressBox();
-    content->setWidth(620);
-    content->setPadding(38, 48, 38, 48);
+    content->setWidthPercentage(100);
+    content->setHeight(metrics::LoadingDialogHeight);
+    content->setPadding(metrics::LoadingPaddingVertical,
+                        metrics::LoadingPaddingHorizontal,
+                        metrics::LoadingPaddingVertical,
+                        metrics::LoadingPaddingHorizontal);
     content->setAlignItems(brls::AlignItems::CENTER);
+    content->setJustifyContent(brls::JustifyContent::CENTER);
 
-    auto* title = components::makeSectionLabel(
-        replacePackPlaceholder(
-            localization_.text(restoreDefault
-                                   ? "textures.progress_restore_title"
-                                   : "textures.progress_apply_title"),
-            operationName));
-    title->setHorizontalAlign(brls::HorizontalAlign::CENTER);
-    content->addView(title);
+    auto* contentColumn = new brls::Box(brls::Axis::COLUMN);
+    contentColumn->setWidth(metrics::LoadingContentWidth);
+    contentColumn->setAlignItems(brls::AlignItems::CENTER);
+
+    auto* operationLabel = components::makeBody(localization_.text(
+        restoreDefault ? "textures.progress_restore_operation"
+                       : "textures.progress_apply_operation"));
+    operationLabel->setHeight(metrics::LoadingOperationHeight);
+    operationLabel->setFontSize(metrics::LoadingOperationSize);
+    operationLabel->setSingleLine(true);
+    operationLabel->setHorizontalAlign(brls::HorizontalAlign::CENTER);
+    contentColumn->addView(operationLabel);
+
+    auto* packNameLabel = components::makeSectionLabel(operationName);
+    packNameLabel->setHeight(metrics::LoadingPackNameHeight);
+    packNameLabel->setFontSize(metrics::LoadingPackNameSize);
+    packNameLabel->setMarginTop(metrics::LoadingOperationToNameSpacing);
+    packNameLabel->setHorizontalAlign(brls::HorizontalAlign::CENTER);
+    packNameLabel->setAutoAnimate(false);
+    packNameLabel->setAnimated(false);
+    contentColumn->addView(packNameLabel);
 
     progressStageLabel_ = components::makeBody(
         localization_.text("textures.progress_checking"));
-    progressStageLabel_->setHeight(42);
-    progressStageLabel_->setMarginTop(14);
+    progressStageLabel_->setHeight(metrics::LoadingStageHeight);
+    progressStageLabel_->setMarginTop(metrics::LoadingNameToStageSpacing);
+    progressStageLabel_->setSingleLine(true);
     progressStageLabel_->setHorizontalAlign(brls::HorizontalAlign::CENTER);
-    content->addView(progressStageLabel_);
+    contentColumn->addView(progressStageLabel_);
 
     progressPercentLabel_ = components::makeBody("0%");
-    progressPercentLabel_->setHeight(46);
-    progressPercentLabel_->setFontSize(28);
+    progressPercentLabel_->setWidth(metrics::LoadingPercentWidth);
+    progressPercentLabel_->setHeight(metrics::LoadingPercentHeight);
+    progressPercentLabel_->setFontSize(metrics::LoadingPercentSize);
+    progressPercentLabel_->setMarginTop(
+        metrics::LoadingStageToPercentSpacing);
+    progressPercentLabel_->setSingleLine(true);
     progressPercentLabel_->setHorizontalAlign(brls::HorizontalAlign::CENTER);
-    content->addView(progressPercentLabel_);
+    progressPercentLabel_->setTextColor(
+        brls::Application::getTheme()["texnx/text"]);
+    contentColumn->addView(progressPercentLabel_);
 
     auto* progressTrack = new brls::Box(brls::Axis::ROW);
-    progressTrack->setWidthPercentage(100);
-    progressTrack->setHeight(14);
-    progressTrack->setCornerRadius(7);
+    progressTrack->setWidthPercentage(
+        metrics::LoadingProgressWidthPercent);
+    progressTrack->setHeight(metrics::LoadingProgressHeight);
+    progressTrack->setMarginTop(metrics::LoadingPercentToProgressSpacing);
+    progressTrack->setCornerRadius(metrics::LoadingProgressHeight / 2.0F);
     progressTrack->setClipsToBounds(true);
     progressTrack->setBackgroundColor(
         brls::Application::getTheme()["texnx/progress_track"]);
 
-    progressFill_ =
-        new brls::Rectangle(brls::Application::getTheme()["texnx/text"]);
+    progressFill_ = new brls::Box(brls::Axis::ROW);
     progressFill_->setWidthPercentage(0);
-    progressFill_->setHeight(14);
+    progressFill_->setHeight(metrics::LoadingProgressHeight);
+    progressFill_->setCornerRadius(metrics::LoadingProgressHeight / 2.0F);
+    progressFill_->setBackgroundColor(
+        brls::Application::getTheme()["texnx/text"]);
     progressTrack->addView(progressFill_);
-    content->addView(progressTrack);
+    contentColumn->addView(progressTrack);
+    content->addView(contentColumn);
 
     progressDialog_ = new brls::Dialog(content);
+    auto* dialogFrame = progressDialog_->getAppletFrame();
+    dialogFrame->setWidth(metrics::LoadingDialogWidth);
+    dialogFrame->setCornerRadius(metrics::CardRadius);
+    dialogFrame->setClipsToBounds(true);
+    dialogFrame->setBackgroundColor(
+        brls::Application::getTheme()["texnx/card"]);
     progressDialog_->setCancelable(false);
     progressDialog_->open();
 
