@@ -837,10 +837,13 @@ void TexturesView::beginOperation(const std::size_t entryIndex) {
 
     const auto bridge = asyncBridge_;
     const auto packs = scanResult_.packs;
+    const std::size_t selectedPackIndex =
+        restoreDefault ? 0 : entryIndex - 1U;
     const textures::TexturePack selectedPack =
         restoreDefault ? textures::TexturePack{}
                        : scanResult_.packs[entryIndex - 1U];
-    brls::async([bridge, packs, selectedPack, restoreDefault] {
+    brls::async([bridge, packs, selectedPack, selectedPackIndex,
+                 restoreDefault] {
         const auto progressCallback =
             [bridge](const textures::TextureInstallProgress& progress) {
                 brls::sync([bridge, progress] {
@@ -855,7 +858,19 @@ void TexturesView::beginOperation(const std::size_t entryIndex) {
                                 progressCallback)
                           : textures::TextureInstaller::apply(
                                 selectedPack, progressCallback);
-        auto current = textures::TextureRepository::detectCurrentState(packs);
+        textures::CurrentTextureResult current;
+        if (result.succeeded) {
+            // Installerが検証した同一operationの結果を再利用し、再走査を避ける。
+            current.state = restoreDefault
+                                ? textures::CurrentTextureState::Default
+                                : textures::CurrentTextureState::KnownPack;
+            if (!restoreDefault) {
+                current.matchedPackIndex = selectedPackIndex;
+            }
+        } else {
+            current =
+                textures::TextureRepository::detectCurrentState(packs);
+        }
         brls::sync([bridge, result = std::move(result),
                     current = std::move(current)]() mutable {
             if (bridge->view != nullptr) {

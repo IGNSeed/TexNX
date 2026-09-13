@@ -227,41 +227,78 @@ TextureScanResult TextureRepository::scan() noexcept {
 
 CurrentTextureResult TextureRepository::detectCurrentState(
     const std::vector<TexturePack>& packs) noexcept {
-    const auto installed = TextureTree::inspect(paths::MinecraftCommon, true);
-    if (installed.state == TextureTreeState::Missing) {
-        CurrentTextureResult result;
-        result.state = CurrentTextureState::Default;
-        return result;
-    }
-    if (installed.state == TextureTreeState::Error) {
-        return {CurrentTextureState::Error,
-                std::numeric_limits<std::size_t>::max(),
-                installed.posixError,
-                installed.nativeResult,
-                installed.errorPath};
-    }
-
-    for (std::size_t index = 0; index < packs.size(); ++index) {
-        const auto candidate =
-            TextureTree::inspect(packs[index].commonPath, true);
-        if (candidate.state != TextureTreeState::Ready) {
-            return {CurrentTextureState::Error,
-                    std::numeric_limits<std::size_t>::max(),
-                    candidate.posixError,
-                    candidate.nativeResult,
-                    candidate.errorPath};
-        }
-        if (TextureTree::fingerprintsEqual(installed, candidate)) {
+    try {
+        auto installed =
+            TextureTree::inspect(paths::MinecraftCommon, false);
+        if (installed.state == TextureTreeState::Missing) {
             CurrentTextureResult result;
-            result.state = CurrentTextureState::KnownPack;
-            result.matchedPackIndex = index;
+            result.state = CurrentTextureState::Default;
             return result;
         }
-    }
+        if (installed.state == TextureTreeState::Error) {
+            return {CurrentTextureState::Error,
+                    std::numeric_limits<std::size_t>::max(),
+                    installed.posixError,
+                    installed.nativeResult,
+                    installed.errorPath};
+        }
 
-    CurrentTextureResult result;
-    result.state = CurrentTextureState::ExternalOrUnknown;
-    return result;
+        bool installedHashed = false;
+        for (std::size_t index = 0; index < packs.size(); ++index) {
+            auto candidate =
+                TextureTree::inspect(packs[index].commonPath, false);
+            if (candidate.state != TextureTreeState::Ready) {
+                return {CurrentTextureState::Error,
+                        std::numeric_limits<std::size_t>::max(),
+                        candidate.posixError,
+                        candidate.nativeResult,
+                        candidate.errorPath};
+            }
+            // path/type/sizeが異なるpackではfile contentsを読まない。
+            if (!TextureTree::metadataEquivalent(installed, candidate)) {
+                continue;
+            }
+
+            if (!installedHashed) {
+                // 最初の候補が現れた時だけinstalled contentsを1回hashする。
+                installed = TextureTree::fingerprint(
+                    paths::MinecraftCommon, std::move(installed));
+                if (installed.state != TextureTreeState::Ready) {
+                    return {CurrentTextureState::Error,
+                            std::numeric_limits<std::size_t>::max(),
+                            installed.posixError,
+                            installed.nativeResult,
+                            installed.errorPath};
+                }
+                installedHashed = true;
+            }
+
+            candidate = TextureTree::fingerprint(
+                packs[index].commonPath, std::move(candidate));
+            if (candidate.state != TextureTreeState::Ready) {
+                return {CurrentTextureState::Error,
+                        std::numeric_limits<std::size_t>::max(),
+                        candidate.posixError,
+                        candidate.nativeResult,
+                        candidate.errorPath};
+            }
+            if (TextureTree::fingerprintsEqual(installed, candidate)) {
+                CurrentTextureResult result;
+                result.state = CurrentTextureState::KnownPack;
+                result.matchedPackIndex = index;
+                return result;
+            }
+        }
+
+        CurrentTextureResult result;
+        result.state = CurrentTextureState::ExternalOrUnknown;
+        return result;
+    } catch (...) {
+        CurrentTextureResult result;
+        result.state = CurrentTextureState::Error;
+        result.posixError = ENOMEM;
+        return result;
+    }
 }
 
 } // namespace texnx::textures

@@ -1,10 +1,8 @@
 #include "texnx/textures/TextureTree.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cerrno>
 #include <cstdio>
-#include <cstring>
 #include <dirent.h>
 #include <limits>
 #include <memory>
@@ -20,10 +18,6 @@ namespace texnx::textures {
 namespace {
 
 constexpr std::size_t HashBufferSize = 128U * 1024U;
-constexpr std::array<std::uint8_t, 18> FingerprintHeader{
-    'T', 'e', 'x', 'N', 'X', '-', 'C', 'o', 'm', 'm', 'o', 'n', '-', 'v', '1',
-    0, 0, 1};
-
 struct PendingDirectory {
     std::string relativePath;
     std::string fullPath;
@@ -100,15 +94,7 @@ bool bytewiseLess(const std::string& left, const std::string& right) noexcept {
     return left.size() < right.size();
 }
 
-void hashUint64(Sha256Context& context, const std::uint64_t value) noexcept {
-    std::array<std::uint8_t, 8> bytes{};
-    for (std::size_t index = 0; index < bytes.size(); ++index) {
-        bytes[index] = static_cast<std::uint8_t>(value >> (index * 8U));
-    }
-    sha256ContextUpdate(&context, bytes.data(), bytes.size());
-}
-
-bool hashFile(Sha256Context& context, const std::string& fullPath,
+bool hashFile(TextureFingerprintBuilder& builder, const std::string& fullPath,
               const std::uint64_t expectedSize, unsigned char* buffer,
               const std::size_t bufferSize, int& posixError) noexcept {
     errno = 0;
@@ -140,7 +126,11 @@ bool hashFile(Sha256Context& context, const std::string& fullPath,
                 succeeded = false;
                 break;
             }
-            sha256ContextUpdate(&context, buffer, bytesRead);
+            if (!builder.updateFileBytes(buffer, bytesRead)) {
+                posixError = EIO;
+                succeeded = false;
+                break;
+            }
         }
         if (bytesRead < bufferSize) {
             if (std::ferror(input) != 0) {
@@ -169,53 +159,54 @@ bool hashFile(Sha256Context& context, const std::string& fullPath,
     return succeeded;
 }
 
-TextureTreeSnapshot hashSnapshot(std::string_view rootPath,
-                                 TextureTreeSnapshot snapshot) {
-    const std::string root(rootPath);
-    // Borealis workerのstackを圧迫しないよう、snapshot全体でheap bufferを再利用する。
-    std::unique_ptr<unsigned char[]> buffer(
-        new (std::nothrow) unsigned char[HashBufferSize]);
-    if (!buffer) {
-        return failure(ENOMEM, root);
+} // namespace
+
+TextureTreeSnapshot TextureTree::fingerprint(
+    const std::string_view rootPath, TextureTreeSnapshot snapshot) noexcept {
+    if (snapshot.state != TextureTreeState::Ready) {
+        return failure(EINVAL, rootPath);
+    }
+    if (rootPath.empty() || rootPath.size() >= FS_MAX_PATH) {
+        return failure(rootPath.empty() ? EINVAL : ENAMETOOLONG, rootPath);
     }
 
-    Sha256Context context{};
-    sha256ContextCreate(&context);
-    sha256ContextUpdate(&context, FingerprintHeader.data(),
-                        FingerprintHeader.size());
-    hashUint64(context, static_cast<std::uint64_t>(snapshot.entries.size()));
-    hashUint64(context, snapshot.totalFiles);
-    hashUint64(context, snapshot.totalDirectories);
-    hashUint64(context, snapshot.totalBytes);
+    try {
+        const std::string root(rootPath);
+        // Borealis workerのstackを圧迫しないよう、snapshot全体でheap bufferを再利用する。
+        std::unique_ptr<unsigned char[]> buffer(
+            new (std::nothrow) unsigned char[HashBufferSize]);
+        if (!buffer) {
+            return failure(ENOMEM, root);
+        }
 
-    for (const auto& entry : snapshot.entries) {
-        const std::uint8_t type =
-            entry.type == TextureTreeEntryType::Directory ? 'D' : 'F';
-        sha256ContextUpdate(&context, &type, sizeof(type));
-        hashUint64(context,
-                   static_cast<std::uint64_t>(entry.relativePath.size()));
-        sha256ContextUpdate(&context, entry.relativePath.data(),
-                            entry.relativePath.size());
-        hashUint64(context, entry.size);
+        TextureFingerprintBuilder builder(snapshot);
 
-        if (entry.type == TextureTreeEntryType::File) {
-            std::string fullPath;
-            if (!appendPath(root, entry.relativePath, fullPath)) {
-                return failure(ENAMETOOLONG, root);
+        for (const auto& entry : snapshot.entries) {
+            if (!builder.beginEntry(entry)) {
+                return failure(EIO, root);
             }
-            int readError = 0;
-            if (!hashFile(context, fullPath, entry.size, buffer.get(),
-                          HashBufferSize, readError)) {
-                return failure(readError, fullPath);
+
+            if (entry.type == TextureTreeEntryType::File) {
+                std::string fullPath;
+                if (!appendPath(root, entry.relativePath, fullPath)) {
+                    return failure(ENAMETOOLONG, root);
+                }
+                int readError = 0;
+                if (!hashFile(builder, fullPath, entry.size, buffer.get(),
+                              HashBufferSize, readError)) {
+                    return failure(readError, fullPath);
+                }
             }
         }
+
+        if (!builder.finish(snapshot.fingerprint)) {
+            return failure(EIO, root);
+        }
+        return snapshot;
+    } catch (...) {
+        return failure(ENOMEM, rootPath);
     }
-
-    sha256ContextGetHash(&context, snapshot.fingerprint.data());
-    return snapshot;
 }
-
-} // namespace
 
 TextureTreeSnapshot TextureTree::inspect(const std::string_view rootPath,
                                          const bool hashContents) noexcept {
@@ -354,22 +345,11 @@ TextureTreeSnapshot TextureTree::inspect(const std::string_view rootPath,
                       return left.type < right.type;
                   });
 
-        return hashContents ? hashSnapshot(rootPath, std::move(result))
+        return hashContents ? fingerprint(rootPath, std::move(result))
                             : result;
     } catch (...) {
         return failure(ENOMEM, rootPath);
     }
-}
-
-bool TextureTree::fingerprintsEqual(
-    const TextureTreeSnapshot& left,
-    const TextureTreeSnapshot& right) noexcept {
-    return left.state == TextureTreeState::Ready &&
-           right.state == TextureTreeState::Ready &&
-           left.totalFiles == right.totalFiles &&
-           left.totalDirectories == right.totalDirectories &&
-           left.totalBytes == right.totalBytes &&
-           left.fingerprint == right.fingerprint;
 }
 
 } // namespace texnx::textures

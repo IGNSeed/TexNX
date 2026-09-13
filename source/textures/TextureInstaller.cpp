@@ -15,6 +15,7 @@
 #include <string_view>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 #include <switch.h>
@@ -285,6 +286,7 @@ bool createTreeDirectories(const TextureTreeSnapshot& source,
 bool copyFile(const std::string& sourcePath, const std::string& destinationPath,
               const std::uint64_t expectedSize,
               unsigned char* buffer, const std::size_t bufferSize,
+              TextureFingerprintBuilder& fingerprint,
               const TextureInstallProgressCallback& progress,
               std::uint64_t& totalCopied,
               std::uint64_t& lastReportedPercent,
@@ -337,6 +339,14 @@ bool copyFile(const std::string& sourcePath, const std::string& destinationPath,
                                   TextureInstallError::SourceRead,
                                   errno != 0 ? errno : EIO,
                                   lastNativeResult(), sourcePath);
+            succeeded = false;
+            break;
+        }
+        // Copyに使う同じsource bytesをv1 fingerprintへ同時に流す。
+        if (!fingerprint.updateFileBytes(buffer, bytesRead)) {
+            errorResult = failure(TextureInstallStage::Copying,
+                                  TextureInstallError::SourceRead, EIO, 0,
+                                  sourcePath);
             succeeded = false;
             break;
         }
@@ -402,7 +412,8 @@ bool copyFile(const std::string& sourcePath, const std::string& destinationPath,
 bool copySnapshot(const TexturePack& pack, const TextureTreeSnapshot& source,
                   unsigned char* buffer, const std::size_t bufferSize,
                   const TextureInstallProgressCallback& progress,
-                  TextureInstallResult& result) {
+                  TextureInstallResult& result,
+                  std::array<std::uint8_t, 32>& sourceFingerprint) {
     std::uint64_t totalCopied = 0;
     std::uint64_t lastReportedPercent = 0;
     std::uint64_t emptyFilesCopied = 0;
@@ -410,9 +421,16 @@ bool copySnapshot(const TexturePack& pack, const TextureTreeSnapshot& source,
         source.totalBytes == 0
             ? std::max<std::uint64_t>(1, source.totalFiles)
             : source.totalBytes;
+    TextureFingerprintBuilder fingerprint(source);
     emitProgress(progress, TextureInstallStage::Copying, 0, progressTotal);
 
     for (const auto& entry : source.entries) {
+        if (!fingerprint.beginEntry(entry)) {
+            result = failure(TextureInstallStage::Copying,
+                             TextureInstallError::SourceRead, EIO, 0,
+                             pack.commonPath);
+            return false;
+        }
         if (entry.type != TextureTreeEntryType::File) {
             continue;
         }
@@ -433,8 +451,8 @@ bool copySnapshot(const TexturePack& pack, const TextureTreeSnapshot& source,
         }
         result.totalBytes = source.totalBytes;
         if (!copyFile(sourcePath, destinationPath, entry.size, buffer,
-                      bufferSize, progress, totalCopied, lastReportedPercent,
-                      result)) {
+                      bufferSize, fingerprint, progress, totalCopied,
+                      lastReportedPercent, result)) {
             return false;
         }
         if (source.totalBytes == 0) {
@@ -450,6 +468,12 @@ bool copySnapshot(const TexturePack& pack, const TextureTreeSnapshot& source,
         }
     }
 
+    if (!fingerprint.finish(sourceFingerprint)) {
+        result = failure(TextureInstallStage::Copying,
+                         TextureInstallError::SourceRead, EIO, 0,
+                         pack.commonPath);
+        return false;
+    }
     emitProgress(progress, TextureInstallStage::Copying, progressTotal,
                  progressTotal);
     return true;
@@ -581,8 +605,9 @@ TextureInstallResult TextureInstaller::apply(
         }
         emitProgress(progress, TextureInstallStage::Creating, 1, 1);
 
+        std::array<std::uint8_t, 32> copiedSourceFingerprint{};
         if (!copySnapshot(pack, source, copyBuffer.get(), CopyBufferSize,
-                          progress, result)) {
+                          progress, result, copiedSourceFingerprint)) {
             cleanDestination(progress, result);
             return result;
         }
@@ -596,25 +621,74 @@ TextureInstallResult TextureInstaller::apply(
         emitProgress(progress, TextureInstallStage::Committing, 1, 1);
 
         emitProgress(progress, TextureInstallStage::Verifying, 0, 1);
-        const auto sourceAfter = TextureTree::inspect(pack.commonPath, true);
-        const auto destinationAfter =
-            TextureTree::inspect(paths::MinecraftCommon, true);
-        if (!TextureTree::fingerprintsEqual(source, sourceAfter) ||
+        // Preflight後にsourceを全文再読込せず、copy時に得たhashと照合する。
+        if (source.fingerprint != copiedSourceFingerprint) {
+            result = failure(TextureInstallStage::Verifying,
+                             TextureInstallError::Verification, EIO, 0,
+                             pack.commonPath);
+            result.destinationTouched = true;
+            result.totalFiles = source.totalFiles;
+            result.totalDirectories = source.totalDirectories;
+            result.totalBytes = source.totalBytes;
+            cleanDestination(progress, result);
+            return result;
+        }
+
+        const auto sourceAfter = TextureTree::inspect(pack.commonPath, false);
+        if (sourceAfter.state != TextureTreeState::Ready ||
+            !TextureTree::metadataEquivalent(source, sourceAfter)) {
+            result = sourceAfter.state != TextureTreeState::Ready
+                         ? snapshotFailure(sourceAfter,
+                                           TextureInstallStage::Verifying,
+                                           TextureInstallError::Verification)
+                         : failure(TextureInstallStage::Verifying,
+                                   TextureInstallError::Verification, EIO, 0,
+                                   pack.commonPath);
+            result.destinationTouched = true;
+            result.totalFiles = source.totalFiles;
+            result.totalDirectories = source.totalDirectories;
+            result.totalBytes = source.totalBytes;
+            cleanDestination(progress, result);
+            return result;
+        }
+
+        auto destinationAfter =
+            TextureTree::inspect(paths::MinecraftCommon, false);
+        if (destinationAfter.state != TextureTreeState::Ready) {
+            result = snapshotFailure(destinationAfter,
+                                     TextureInstallStage::Verifying,
+                                     TextureInstallError::Verification);
+            result.destinationTouched = true;
+            result.totalFiles = source.totalFiles;
+            result.totalDirectories = source.totalDirectories;
+            result.totalBytes = source.totalBytes;
+            cleanDestination(progress, result);
+            return result;
+        }
+        if (!TextureTree::metadataEquivalent(source, destinationAfter)) {
+            result = failure(TextureInstallStage::Verifying,
+                             TextureInstallError::Verification, EIO, 0,
+                             paths::MinecraftCommon);
+            result.destinationTouched = true;
+            result.totalFiles = source.totalFiles;
+            result.totalDirectories = source.totalDirectories;
+            result.totalBytes = source.totalBytes;
+            cleanDestination(progress, result);
+            return result;
+        }
+
+        // DestinationはSDから必ずread-backし、書込み時hashだけを信用しない。
+        destinationAfter = TextureTree::fingerprint(
+            paths::MinecraftCommon, std::move(destinationAfter));
+        if (destinationAfter.state != TextureTreeState::Ready ||
             !TextureTree::fingerprintsEqual(source, destinationAfter)) {
-            if (sourceAfter.state == TextureTreeState::Error ||
-                sourceAfter.state == TextureTreeState::Missing) {
-                result = snapshotFailure(sourceAfter,
-                                         TextureInstallStage::Verifying,
-                                         TextureInstallError::Verification);
-            } else if (destinationAfter.state != TextureTreeState::Ready) {
-                result = snapshotFailure(destinationAfter,
-                                         TextureInstallStage::Verifying,
-                                         TextureInstallError::Verification);
-            } else {
-                result = failure(TextureInstallStage::Verifying,
-                                 TextureInstallError::Verification, EIO, 0,
-                                 paths::MinecraftCommon);
-            }
+            result = destinationAfter.state != TextureTreeState::Ready
+                         ? snapshotFailure(destinationAfter,
+                                           TextureInstallStage::Verifying,
+                                           TextureInstallError::Verification)
+                         : failure(TextureInstallStage::Verifying,
+                                   TextureInstallError::Verification, EIO, 0,
+                                   paths::MinecraftCommon);
             result.destinationTouched = true;
             result.totalFiles = source.totalFiles;
             result.totalDirectories = source.totalDirectories;

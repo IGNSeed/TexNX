@@ -42,6 +42,7 @@ add_executable(TexNX
     source/filesystem/FileSystem.cpp
     source/localization/Localization.cpp
     source/platform/SwitchLifecycle.c
+    source/textures/TextureFingerprint.cpp
     source/textures/TextureInstaller.cpp
     source/textures/TextureRepository.cpp
     source/textures/TextureTree.cpp
