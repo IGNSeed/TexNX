@@ -291,6 +291,7 @@ class TextureScrollingFrame final : public brls::ScrollingFrame {
 public:
     TextureScrollingFrame() {
         setScrollingBehavior(brls::ScrollingBehavior::CENTERED);
+        setScrollingIndicatorVisible(false);
     }
 
     void onChildFocusGained(brls::View* directChild,
